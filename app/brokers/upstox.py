@@ -1,0 +1,1 @@
+"""upstox adapter."""
