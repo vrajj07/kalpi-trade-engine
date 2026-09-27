@@ -7,8 +7,9 @@ class Settings(BaseSettings):
     app_name: str = "Kalpi Trade Execution Engine"
     env: str = "local"
     log_level: str = "INFO"
+    api_prefix: str = "/api/v1"
 
-    database_url: str = "sqlite:///./data/kalpi.db"
+    database_url: str = "postgresql+psycopg://kalpi:kalpi@localhost:5433/kalpi"
 
     notification_webhook_url: str | None = None
 
