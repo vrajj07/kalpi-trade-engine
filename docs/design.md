@@ -93,6 +93,11 @@ stored **unadjusted**. The adjustment factor is applied at read time, to prices 
 | 1-min OHLCV | Continuous aggregate | Compressed, to 2 years | S3 Parquet | Intraday charts, momentum |
 | Daily OHLCV | Kept in the database forever (~60 MB/year) | — | — | P/E history, factor models, backtests |
 
+The 7-day uncompressed window exists because writes into compressed chunks are expensive: exchange trade
+corrections and ingest gap replays can arrive days late (a long weekend plus a holiday). Seven days covers
+that with margin at ~75 GB of hot disk (2.7 TB / 250 sessions ≈ 11 GB/day); it is one policy setting,
+tuned from the measured correction lag.
+
 Deleting raw ticks cannot be undone, and keeping them costs almost nothing: roughly $6/month per year of
 history on S3 Standard, less on Glacier. They are also needed for **transaction cost analysis**
 (slippage of the Problem 1 execution engine's fills against the market at order time). Rollups are
@@ -122,16 +127,19 @@ total, so the per-second loop never queries the database.
 ### Pattern A: live metrics in under 200 ms
 
 - **Store:** the Redis hash `metrics:{symbol}` holds `{pe, momentum, yield, as_of}`. The compute
-  worker overwrites it every second (**write-through**), so there is nothing to invalidate.
+  worker overwrites it each second the symbol ticks (**write-through**), so there is nothing to invalidate.
 - **Snapshot, then stream:** `GET /v1/metrics/{symbol}` runs one `HGETALL` (sub-millisecond) so the
   page is correct as soon as it opens. `GET /v1/metrics/{symbol}/stream` (**SSE**) then pushes updates.
   SSE is one-directional, runs over plain HTTP, reconnects automatically and works through load balancers.
   WebSocket's two-way channel isn't needed.
 - **Fan-out:** the worker publishes to a Redis pub/sub channel per symbol. Each SSE node subscribes only
   to symbols that someone is viewing, so a thousand viewers of INFY cost one subscription.
-- **Staleness over invalidation:** each key has a ~10 s TTL as a dead-man's switch, and every response
-  carries `as_of`. If the worker dies, the UI shows the data as stale instead of showing frozen numbers
-  as if they were live. **Visibly stale is safe; silently stale is dangerous.**
+- **Staleness over invalidation, with two separate clocks.** `as_of` is the last tick's time, so an
+  illiquid stock that hasn't traded for 2 minutes honestly shows a 2-minute-old price. Worker liveness is
+  separate: the worker refreshes one `worker:heartbeat` key (10 s TTL) every second, and when it is
+  missing the API marks responses `stale`. A per-symbol TTL would expire quiet stocks while the worker is
+  healthy. With workers split by symbol partition, it becomes one heartbeat per partition, so a stuck
+  partition is caught too. **Visibly stale is safe; silently stale is dangerous.**
 
 ### Pattern B: 3-year P/E chart (~750 points)
 
