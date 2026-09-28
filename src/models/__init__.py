@@ -5,5 +5,6 @@ create_all() runs.
 """
 from .broker import BrokerConnection
 from .execution import Execution, ExecutionEvent, ExecutionOrder
+from .notification import NotificationOutbox
 
-__all__ = ["BrokerConnection", "Execution", "ExecutionEvent", "ExecutionOrder"]
+__all__ = ["BrokerConnection", "Execution", "ExecutionEvent", "ExecutionOrder", "NotificationOutbox"]

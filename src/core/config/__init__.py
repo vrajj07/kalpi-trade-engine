@@ -27,6 +27,13 @@ class Settings(BaseSettings):
 
     # Empty: execution reports are logged to the console instead.
     notification_webhook_url: str | None = None
+    # Outbox relay. The lease must outlast one delivery (the timeout), or a slow but
+    # successful delivery would be claimed and sent again.
+    notification_poll_interval_seconds: float = 5.0
+    notification_batch_size: int = 20
+    notification_timeout_seconds: float = 5.0
+    notification_lease_seconds: float = 60.0
+    notification_max_attempts: int = 8  # then FAILED (dead-lettered); about 8 minutes of backoff
 
     # Execution: how long one order is tracked (status polls / reconciliation by tag)
     # before it is reported as STILL_OPEN or UNCONFIRMED.

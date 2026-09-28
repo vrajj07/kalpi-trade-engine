@@ -1,15 +1,18 @@
 """The state machine: every legal state change, and the only functions allowed to make one.
 
 Each change is checked against the table, applied, and recorded as an ExecutionEvent in the
-same unit of work, so the audit log and the current state are committed together.
+same unit of work, so the audit log and the current state are committed together. Reaching a
+final execution state also appends the notification it owes (transactional outbox), so the
+report cannot be lost between the commit and its delivery.
 A final state has no outgoing transitions: a FILLED order can never become PLACED again.
 """
 import logging
 from datetime import UTC, datetime
 
-from src.models import Execution, ExecutionEvent, ExecutionOrder
+from src.models import Execution, ExecutionEvent, ExecutionOrder, NotificationOutbox
 
 from src.models.execution.enums import ExecutionState, OrderState
+from src.models.notification.enums import NotificationEvent
 from .exceptions import IllegalTransitionError
 
 logger = logging.getLogger(__name__)
@@ -57,3 +60,6 @@ def transition_execution(execution: Execution, to: ExecutionState, reason: str |
     execution.events.add(ExecutionEvent(from_state=execution.state, to_state=to, message=reason))
     execution.state, execution.reason = to, reason
     execution.finished_at = datetime.now(UTC)
+    if not EXECUTION_TRANSITIONS[to]:  # final: the report is owed
+        execution.notifications.add(NotificationOutbox(user_id=execution.user_id,
+                                                       event=NotificationEvent.EXECUTION_FINISHED))

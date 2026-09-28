@@ -6,7 +6,7 @@ it is queried and when the transaction commits, so query idioms live in one plac
 from collections.abc import Sequence
 from typing import Any, TypeVar
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm.interfaces import ORMOption
@@ -30,9 +30,18 @@ class DatabaseService:
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def filter(self, model: type[T], *, order_by: Any = None, limit: int | None = None,
-                     options: Sequence[ORMOption] = (), **filters: Any) -> list[T]:
-        """Rows matching every filter: a list/tuple/set value means IN, anything else equality."""
-        stmt = select(model).options(*options)
+                     options: Sequence[ORMOption] = (), conditions: Sequence[ColumnElement[bool]] = (),
+                     skip_locked: bool = False, **filters: Any) -> list[T]:
+        """Rows matching every filter: a list/tuple/set value means IN, anything else equality.
+
+        conditions: extra expressions the keyword filters cannot say (e.g. a range).
+        skip_locked: lock the rows for this transaction, skipping rows another transaction has
+        locked (FOR UPDATE SKIP LOCKED), so concurrent workers claim disjoint rows. SQLite has no
+        row locks and ignores it.
+        """
+        stmt = select(model).options(*options).where(*conditions)
+        if skip_locked:
+            stmt = stmt.with_for_update(skip_locked=True)
         for field_name, value in filters.items():
             column = self._column(model, field_name)
             stmt = stmt.where(column.in_(value) if isinstance(value, list | tuple | set) else column == value)

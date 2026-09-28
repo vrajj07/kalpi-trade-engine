@@ -13,8 +13,8 @@ from src.integrations.brokers.mock import MockBroker
 from src.core.config.mock import MockConfig
 from src.main import app
 from src.modules.execution.helpers import runner
-from src.modules.notification.base import WebhookNotifier
-from src.schemas.execution import ExecutionReport
+from src.modules import notification
+from src.modules.notification.helpers.notifiers import ConsoleNotifier
 
 URL = f"{settings.api_prefix}/executions"
 BROKERS = f"{settings.api_prefix}/brokers"
@@ -192,12 +192,18 @@ def test_missing_user_is_rejected(client):
     assert client.get(BROKERS, headers={"X-User-Id": ""}).status_code == 422
 
 
-@respx.mock
-async def test_webhook_retries_then_delivers_report():
-    route = respx.post("https://hooks.test/kalpi").mock(side_effect=[httpx.Response(500), httpx.Response(200)])
-    report = ExecutionReport.model_validate({
-        "id": uuid.uuid4(), "broker": "mock", "state": "COMPLETED", "reason": None, "created_at": None,
-        "expires_at": "2026-09-28T10:00:00Z", "finished_at": None, "orders": []})
-    async with httpx.AsyncClient() as http:
-        await WebhookNotifier("https://hooks.test/kalpi", http).notify(report)
-    assert route.call_count == 2
+def test_finished_execution_report_is_delivered_through_the_outbox(client, monkeypatch):
+    delivered = []
+
+    class Recording(ConsoleNotifier):
+        async def notify(self, event, report):
+            delivered.append((event, report.id, report.state))
+
+    monkeypatch.setattr(notification, "get_notifier", Recording)
+    execution_id = submit(client).json()["id"]
+    wait_finished(client, execution_id)
+    for _ in range(200):
+        if delivered:
+            break
+        time.sleep(0.01)
+    assert delivered == [("execution.finished", uuid.UUID(execution_id), "COMPLETED")]

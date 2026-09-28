@@ -240,8 +240,46 @@ It generalises when a second workflow appears (for example scheduled SIP buys):
 
 ### Notification
 
-The final report goes to `NOTIFICATION_WEBHOOK_URL` if it is set; otherwise it is logged. Delivery is
-at-least-once with 3 attempts, so consumers should deduplicate on `id`.
+The final report goes to `NOTIFICATION_WEBHOOK_URL` if it is set; otherwise it is logged.
+
+```
+final transition ─► commit state + audit event + outbox row (one transaction)
+                                                   │
+      relay (poll every 5 s, woken on finish) ─────┘  claims due rows with a lease
+         │
+         ▼
+  notifier (webhook / console) ─► SENT | retry later | FAILED
+```
+
+- **Transactional outbox.** "Commit the final state, then send" loses the report if the process dies in
+  between (a dual write). Instead, the state machine (`transitions.py`) writes a `notification_outbox` row in
+  the same transaction as the final state, next to the audit event. A crash can delay a report, not lose it.
+- **Claim check.** The row holds the `execution_id`, not the report. The report is built at delivery time;
+  the execution is final, so it no longer changes.
+- **In-process relay** (`modules/notification/helpers/relay.py`). One background loop claims due rows
+  (`FOR UPDATE SKIP LOCKED`), delivers them concurrently, and records each outcome. It polls on an interval
+  and is woken when an execution finishes, so reports go out within moments. The poll is the guarantee; the
+  wake only cuts latency.
+- **Lease, not a held lock.** A claim commits before any HTTP call: it counts the attempt and pushes
+  `next_attempt_at` out by `NOTIFICATION_LEASE_SECONDS`. No transaction stays open across a slow consumer,
+  and a relay that dies mid-delivery leaves the row to be picked up again when the lease runs out.
+- **Retry policy.** Timeouts, connection errors, `5xx`, `408`, `425` and `429` are retried with exponential
+  backoff and full jitter, honouring `Retry-After`. Any other `4xx` (and a `3xx`: redirects are not
+  followed) is a refusal and is dead-lettered at once, since retrying would repeat it. After
+  `NOTIFICATION_MAX_ATTEMPTS` the row is `FAILED` with `last_error`, which is the dead-letter state.
+- **At-least-once.** A lease can run out during a slow but successful delivery, and a response can be lost
+  after the consumer processed it. Consumers deduplicate on the `X-Delivery-Id` header
+  (`<execution_id>:<event>`).
+- **Graceful shutdown.** The relay finishes the batch in flight before the app stops; past a grace period it
+  is cancelled, which the lease makes safe.
+
+Not built yet:
+- **Per-user destinations.** One global webhook URL receives every user's report. A multi-tenant setup needs
+  a per-user endpoint, registered with an SSRF check (`https` only, no private, loopback or link-local
+  addresses, re-checked at connect time against DNS rebinding).
+- **Signed payloads.** Consumers cannot tell our POST from a forged or replayed one. An HMAC-SHA256 signature
+  over `timestamp.body` with a per-user secret (`X-Signature`, `X-Timestamp`, rejected if too old) would
+  let them.
 
 The mock broker is configured in `.env` (modes listed in `.env.example`):
 - `MOCK_HOLDINGS={}` to try a first-time `target` portfolio
@@ -341,6 +379,23 @@ POST /executions ─► commit execution + outbox row (one transaction)
   does today. A cancelled run stays `RUNNING` and its message is redelivered.
 - **Idempotency-Key is still needed.** The queue deduplicates *deliveries* of one execution. The key
   deduplicates *client requests*: a retried `POST` after a timeout must not create a second execution.
+
+### Path to production: notification delivery
+
+At scale, webhook delivery leaves the API process, so a slow or dead consumer endpoint cannot take API
+capacity (a bulkhead). The relay stops POSTing and **publishes** outbox rows to a queue instead, and
+separate delivery workers POST. That is one more `Notifier`; the outbox, the claim and the retry policy stay.
+
+- **FIFO with `MessageGroupId` = user.** A user's reports arrive in order, and one user's dead endpoint only
+  blocks that user's group (head-of-line blocking contained to one tenant). While there is a single event per
+  execution, a standard queue would do; ordering starts to matter once `execution.started` or per-order events
+  exist.
+- **Failures go to a dead-letter queue** after `maxReceiveCount`, and the worker applies the same retryable
+  vs terminal classification.
+- **No runtime fallback to in-process delivery.** If the queue is unreachable, rows wait in the outbox and
+  drain when it recovers. Falling back to in-process delivery would weaken durability exactly when the
+  infrastructure is unhealthy, and could overtake messages already queued for the same user. Local
+  development picks the in-process relay by configuration, not by fallback.
 
 ## Third-party libraries
 

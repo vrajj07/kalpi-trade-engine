@@ -30,7 +30,7 @@ async def submit_execution(
 ) -> ExecutionReport:
     """Accepts BUY / SELL / REBALANCE instructions and executes them in the background.
 
-    Poll `GET /executions/{id}` for progress; the final report is also sent to the notifier.
+    Poll `GET /executions/{id}` for progress; the final report is also delivered through the notification outbox.
     """
     execution, replayed = await service.submit(user_id, idempotency_key, body)
     response.headers["Location"] = str(request.url_for("get_execution", execution_id=execution.id))

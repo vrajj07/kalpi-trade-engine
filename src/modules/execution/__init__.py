@@ -26,8 +26,8 @@ from src.modules.execution.executor import Executor
 from src.modules.execution.helpers import lifecycle, runner
 from src.modules.execution.helpers.idempotency import request_hash
 from src.modules.execution.helpers.planner import instructions_for, plan
-from src.modules.notification.base import get_notifier
-from src.schemas.execution import ExecutionCreate, ExecutionReport
+from src.modules.notification import NotificationModule
+from src.schemas.execution import ExecutionCreate
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +73,13 @@ class ExecutionModule:
         if lifecycle.is_expired(execution, datetime.now(UTC)):
             lifecycle.expire(execution)
             await self.dao.save()
+            NotificationModule.wake()
             return
         execution_id = execution.id
         runner.start(execution_id, lambda session: ExecutionModule(session).run(execution_id))
 
     async def run(self, execution_id: uuid.UUID) -> None:
-        """Background run: drives the execution to a final state, then sends the report.
+        """Background run: drives the execution to a final state; the report goes out through the outbox.
 
         The user's session is loaded from their stored connection here, not passed in, so a
         resumed run (or a queue worker) needs nothing from the original request."""
@@ -101,7 +102,7 @@ class ExecutionModule:
                 return
             if execution.state is ExecutionState.ABORTED:  # the executor aborts only on a rejected session
                 await self.broker_module.mark_expired(execution.user_id, execution.broker)
-        await get_notifier().notify(ExecutionReport.model_validate(execution))
+        NotificationModule.wake()  # the report was committed to the outbox with the final state
 
 
 __all__ = ["ExecutionModule"]

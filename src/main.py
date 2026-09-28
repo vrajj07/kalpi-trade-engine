@@ -10,6 +10,7 @@ from src.api import router as api_router
 from src.core.config import settings
 from src.core.database import close_db_connections, init_db
 from src.modules.execution.helpers import runner
+from src.modules.notification import NotificationModule
 from src.core.logger import configure_logging
 from src.middlewares.error_handler import add_error_handlers
 
@@ -19,9 +20,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await init_db()
+    NotificationModule.start_relay()
     logger.info("Startup complete")
     yield
     await runner.shutdown()  # before the engine goes: running executions still hold sessions
+    await NotificationModule.stop_relay()
     await close_db_connections()
 
 

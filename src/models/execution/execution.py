@@ -18,6 +18,7 @@ from src.models.execution.enums import ExecutionState
 if TYPE_CHECKING:
     from src.models.execution.event import ExecutionEvent
     from src.models.execution.order import ExecutionOrder
+    from src.models.notification.outbox import NotificationOutbox
 
 
 class Execution(Base):
@@ -43,3 +44,6 @@ class Execution(Base):
     )
     # Write-only: events are appended without loading the history; read through the DAO.
     events: WriteOnlyMapped["ExecutionEvent"] = relationship(cascade="all, delete-orphan", passive_deletes=True)
+    # Notifications owed about this execution, appended by the state machine (transactional outbox).
+    notifications: WriteOnlyMapped["NotificationOutbox"] = relationship(cascade="all, delete-orphan",
+                                                                       passive_deletes=True)
