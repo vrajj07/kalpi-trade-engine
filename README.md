@@ -42,6 +42,21 @@ Try every endpoint:
   `MOCK_HOLDINGS={"INFY": 10, "TCS": 5}` in `.env`.
 - **curl:** `docs/curls.md` lists each request with its expected status.
 
+## Deploy (Render)
+
+`render.yaml` is a Render Blueprint: the API from the Dockerfile plus a managed Postgres. In the Render
+dashboard choose **New → Blueprint**, pick this repo, and paste a Fernet key for `TOKEN_ENCRYPTION_KEYS`
+(`make env` prints one) and optionally a webhook.site URL for `NOTIFICATION_WEBHOOK_URL`. The demo is
+then at `https://<service>.onrender.com/ui/`.
+
+The deployment sets `MOCK_ONLY=true`. The demo has no auth in front of it (`X-User-Id` is trusted, as it
+would be behind a gateway), so anyone could otherwise store a real broker token under someone else's user
+id. With the flag on, connecting any broker except `mock` answers `403 BrokerDisabledError`. The check sits
+in the connect path because every order needs a stored connection. Hosted Postgres URLs (`postgres://`) are
+rewritten to the `postgresql+psycopg://` driver at startup.
+
+Free-tier caveats: the service sleeps when idle (first request ~50 s), and the free database expires after 30 days.
+
 ## Local development
 
 ```bash

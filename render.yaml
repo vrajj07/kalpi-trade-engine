@@ -1,0 +1,30 @@
+# Render Blueprint: the API (Docker) plus a managed Postgres. Dashboard -> New -> Blueprint -> this repo.
+services:
+  - type: web
+    name: kalpi-trade-engine
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: ENV
+        value: demo
+      # No auth in front of the demo: refuse real broker tokens (403 BrokerDisabledError)
+      - key: MOCK_ONLY
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kalpi-db
+          property: connectionString
+      # Prompted at setup; paste the output of `make env` / Fernet.generate_key()
+      - key: TOKEN_ENCRYPTION_KEYS
+        sync: false
+      - key: NOTIFICATION_WEBHOOK_URL
+        sync: false
+      - key: MOCK_HOLDINGS
+        value: '{"INFY": 10, "TCS": 5}'
+
+databases:
+  - name: kalpi-db
+    plan: free

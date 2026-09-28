@@ -5,7 +5,7 @@ each exposing a module-level `<name>_config` instance.
 """
 from datetime import time
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,10 +20,25 @@ class Settings(BaseSettings):
     # SecretStr: the URL embeds the DB password, so keep it out of reprs and logs.
     database_url: SecretStr = SecretStr("postgresql+psycopg://kalpi:kalpi@localhost:5433/kalpi")
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def use_psycopg_driver(cls, value):
+        # Hosted Postgres (Render, Heroku...) hands out postgres:// or postgresql:// URLs;
+        # SQLAlchemy needs the driver named to pick async psycopg.
+        if isinstance(value, str):
+            for scheme in ("postgres://", "postgresql://"):
+                if value.startswith(scheme):
+                    return "postgresql+psycopg://" + value[len(scheme):]
+        return value
+
     # Fernet keys that encrypt stored broker access tokens, comma-separated, newest first.
     # The first encrypts; all decrypt, so a key can be rotated without re-connecting everyone.
     # Generate one: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     token_encryption_keys: SecretStr | None = None
+
+    # Public demo deployments: only the mock broker can be connected. There is no real auth in
+    # front of the demo (X-User-Id is trusted), so real broker tokens must never be accepted there.
+    mock_only: bool = False
 
     # Empty: execution reports are logged to the console instead.
     notification_webhook_url: str | None = None

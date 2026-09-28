@@ -40,3 +40,11 @@ def test_mock_credentials_carry_the_demo_behaviour(monkeypatch):
 def test_secrets_are_hidden_from_reprs():
     assert "kalpi:kalpi" not in repr(settings)
     assert "dGVzdC" not in repr(settings)  # the encryption keys
+
+
+def test_hosted_postgres_url_gets_the_psycopg_driver():
+    from src.core.config import Settings
+
+    for url in ("postgres://u:p@h:5432/d", "postgresql://u:p@h:5432/d"):
+        settings = Settings(_env_file=None, database_url=url)
+        assert settings.database_url.get_secret_value() == "postgresql+psycopg://u:p@h:5432/d"

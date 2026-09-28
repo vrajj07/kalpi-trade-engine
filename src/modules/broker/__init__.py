@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
 from src.dao.broker_connection import BrokerConnectionDAO
 from src.integrations.brokers.base import BrokerCredentials
 from src.integrations.brokers.enums import BrokerName
@@ -17,6 +18,7 @@ from src.models import BrokerConnection
 from src.models.broker.enums import ConnectionStatus
 from src.modules.broker.exceptions import (
     BrokerConnectionExpiredError,
+    BrokerDisabledError,
     BrokerNotConnectedError,
     TokenStorageError,
 )
@@ -32,6 +34,9 @@ class BrokerModule:
     async def connect(self, user_id: str, broker: BrokerName, access_token: SecretStr,
                       client_id: str | None, expires_at: datetime | None) -> BrokerConnection:
         """Stores or replaces the user's session for this broker; a reconnect reactivates it."""
+        # The single gate: without a stored connection, no real broker can be reached.
+        if settings.mock_only and broker != BrokerName.MOCK:
+            raise BrokerDisabledError(broker)
         encrypted = self._cipher().encrypt(access_token)
         connection = await self.dao.get(user_id, broker)
         if connection is None:

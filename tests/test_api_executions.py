@@ -224,3 +224,11 @@ def test_finished_execution_report_is_delivered_through_the_outbox(client, monke
             break
         time.sleep(0.01)
     assert delivered == [("execution.finished", uuid.UUID(execution_id), "COMPLETED")]
+
+
+def test_mock_only_deployment_refuses_real_broker_tokens(client, monkeypatch):
+    monkeypatch.setattr(settings, "mock_only", True)
+    response = client.put(f"{BROKERS}/zerodha/connection", json={"access_token": "kite-secret"})
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "BrokerDisabledError"
+    assert client.put(f"{BROKERS}/mock/connection", json={"access_token": "t"}).status_code == 200
