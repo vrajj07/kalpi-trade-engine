@@ -2,6 +2,8 @@ import os
 import tempfile
 
 # API tests run against a throwaway SQLite file; set before any src module reads settings.
+# Tests that set MockConfig pass _env_file=None: pydantic-settings deep-merges dict fields
+# across sources, so .env MOCK_HOLDINGS would otherwise leak into holdings={...}.
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{tempfile.mkdtemp()}/test.db"
 os.environ["ORDER_TIMEOUT_SECONDS"] = "0.2"
 os.environ["ORDER_POLL_INTERVAL_SECONDS"] = "0.01"

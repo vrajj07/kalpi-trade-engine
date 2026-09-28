@@ -31,7 +31,7 @@ def test_credentials_combine_app_settings_with_the_users_session(monkeypatch):
 
 
 def test_mock_credentials_carry_the_demo_behaviour(monkeypatch):
-    monkeypatch.setattr(registry, "mock_config", MockConfig(holdings={"INFY": 3}))
+    monkeypatch.setattr(registry, "mock_config", MockConfig(_env_file=None, holdings={"INFY": 3}))
     creds = credentials_for(BrokerName.MOCK, SecretStr("any"))
     assert isinstance(get_adapter("mock", creds), MockBroker)
     assert creds.extra["holdings"] == {"INFY": 3}

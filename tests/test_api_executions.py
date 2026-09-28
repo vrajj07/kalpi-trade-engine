@@ -27,7 +27,7 @@ REBALANCE = {"broker": "mock", "instructions": [
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setattr(registry, "mock_config", MockConfig(holdings={"INFY": 10, "TCS": 5}))
+    monkeypatch.setattr(registry, "mock_config", MockConfig(_env_file=None, holdings={"INFY": 10, "TCS": 5}))
     # A fresh user per test (the SQLite file is shared), connected to the mock broker.
     with TestClient(app, headers={"X-User-Id": f"user-{uuid.uuid4().hex[:8]}"}) as c:  # lifespan: creates tables
         assert c.put(f"{BROKERS}/mock/connection", json={"access_token": "mock-token"}).status_code == 200
@@ -90,7 +90,7 @@ def test_invalid_instructions_are_422_with_every_error(client):
 
 
 def test_first_time_target_portfolio_buys_everything(client, monkeypatch):
-    monkeypatch.setattr(registry, "mock_config", MockConfig(holdings={}))
+    monkeypatch.setattr(registry, "mock_config", MockConfig(_env_file=None, holdings={}))
     body = {"broker": "mock", "target": [{"symbol": "INFY", "quantity": 5}, {"symbol": "TCS", "quantity": 2}]}
     report = wait_finished(client, submit(client, body).json()["id"])
     assert [(o["action"], o["symbol"], o["quantity"], o["state"]) for o in report["orders"]] == [
