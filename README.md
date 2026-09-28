@@ -21,6 +21,12 @@ make down
 
 API docs: http://localhost:8000/api/v1/docs
 
+Try every endpoint:
+- **Postman:** import `docs/kalpi.postman_collection.json` and `docs/kalpi.postman_environment.json`, select
+  the `kalpi` environment, and run the collection (every request has tests). The mock broker needs
+  `MOCK_HOLDINGS={"INFY": 10, "TCS": 5}` in `.env`.
+- **curl:** `docs/curls.md` lists each request with its expected status.
+
 ## Local development
 
 ```bash
