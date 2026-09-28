@@ -8,9 +8,5 @@ aiolimiter>=1.1
 sqlalchemy[asyncio]>=2.0
 psycopg[binary]>=3.2
 
-# Broker SDKs — verify names/versions on PyPI before uncommenting
-# kiteconnect
-# fyers-apiv3
-# smartapi-python
-# upstox-python-sdk
-# growwapi
+# Broker SDKs are intentionally not used: adapters call the REST APIs with httpx
+# (async, one retry/rate-limit/error model across brokers). The SDKs are sync (requests).
