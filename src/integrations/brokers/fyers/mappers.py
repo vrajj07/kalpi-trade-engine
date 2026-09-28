@@ -28,6 +28,11 @@ def to_fyers_symbol(symbol: str, exchange: domain.Exchange) -> str:
     raise InstrumentNotFoundError("BSE orders are not supported by the Fyers adapter", broker=domain.BrokerName.FYERS)
 
 
+def has_tag(order: OrderResponse, tag: str) -> bool:
+    # UNVERIFIED: the order book has been seen to return the tag with a numeric prefix.
+    return order.orderTag is not None and (order.orderTag == tag or order.orderTag.endswith(f":{tag}"))
+
+
 def to_broker_order(order: OrderResponse) -> BrokerOrder:
     return BrokerOrder(
         broker_order_id=order.id,

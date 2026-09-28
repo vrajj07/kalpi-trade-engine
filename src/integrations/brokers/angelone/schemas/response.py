@@ -15,6 +15,11 @@ class OrderDetailsResponse(BaseModel):
     text: str | None = None
 
 
+class OrderBookEntry(OrderDetailsResponse):
+    uniqueorderid: str
+    ordertag: str | None = None
+
+
 class HoldingResponse(BaseModel):
     tradingsymbol: str
     exchange: str

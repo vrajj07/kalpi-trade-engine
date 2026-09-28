@@ -6,13 +6,14 @@ import httpx
 from ..common.client import BaseBrokerClient
 from ..errors import BrokerAuthError, BrokerError, BrokerRequestError, OrderRejectedError
 from .enums import AUTH_ERROR_PREFIX, TOKEN_EXCEPTION
-from .schemas import AngelEnvelope, AngelError, HoldingResponse, OrderDetailsResponse, PlaceOrderRequest, PlaceOrderResponse
+from .schemas import AngelEnvelope, AngelError, HoldingResponse, OrderBookEntry, OrderDetailsResponse, PlaceOrderRequest, PlaceOrderResponse
 
 
 class Routes:
     _PREFIX = "/rest/secure/angelbroking"
     PLACE_ORDER = f"{_PREFIX}/order/v1/placeOrder"
     ORDER_DETAILS = f"{_PREFIX}/order/v1/details/{{unique_order_id}}"
+    ORDER_BOOK = f"{_PREFIX}/order/v1/getOrderBook"
     HOLDINGS = f"{_PREFIX}/portfolio/v1/getHolding"
 
 
@@ -43,6 +44,10 @@ class AngelOneClient(BaseBrokerClient):
     async def order_details(self, unique_order_id: str) -> OrderDetailsResponse:
         body = await self.request("GET", Routes.ORDER_DETAILS.format(unique_order_id=unique_order_id))
         return self.parse(AngelEnvelope[OrderDetailsResponse], body).data
+
+    async def order_book(self) -> list[OrderBookEntry]:
+        body = await self.request("GET", Routes.ORDER_BOOK)
+        return self.parse(AngelEnvelope[list[OrderBookEntry] | None], body).data or []
 
     async def holdings(self) -> list[HoldingResponse]:
         body = await self.request("GET", Routes.HOLDINGS)

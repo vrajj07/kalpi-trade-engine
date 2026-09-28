@@ -16,6 +16,15 @@ class OrderDetailsResponse(BaseModel):
     remark: str | None = None
 
 
+class OrderStatusResponse(BaseModel):
+    """UNVERIFIED field names (SDK returns the raw payload)."""
+
+    groww_order_id: str
+    order_status: str = ""
+    filled_quantity: int = 0
+    remark: str | None = None
+
+
 class HoldingResponse(BaseModel):
     trading_symbol: str
     quantity: int

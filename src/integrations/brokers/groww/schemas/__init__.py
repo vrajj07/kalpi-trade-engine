@@ -1,7 +1,7 @@
 """Groww request/response shapes. Requests forbid unknown fields; responses ignore them."""
 from .helpers import GrowwEnvelope, GrowwError, GrowwErrorDetail
 from .request import PlaceOrderRequest
-from .response import HoldingResponse, HoldingsResponse, OrderDetailsResponse, PlaceOrderResponse
+from .response import HoldingResponse, HoldingsResponse, OrderDetailsResponse, OrderStatusResponse, PlaceOrderResponse
 
 __all__ = ["GrowwEnvelope", "GrowwError", "GrowwErrorDetail", "HoldingResponse", "HoldingsResponse",
-           "OrderDetailsResponse", "PlaceOrderRequest", "PlaceOrderResponse"]
+           "OrderDetailsResponse", "OrderStatusResponse", "PlaceOrderRequest", "PlaceOrderResponse"]

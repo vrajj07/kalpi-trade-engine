@@ -7,12 +7,13 @@ import httpx
 from ..common.client import BaseBrokerClient
 from ..errors import BrokerAuthError, BrokerError, BrokerRateLimitError, BrokerRequestError, OrderRejectedError
 from .enums import ErrorCode, Segment
-from .schemas import GrowwEnvelope, GrowwError, HoldingsResponse, OrderDetailsResponse, PlaceOrderRequest, PlaceOrderResponse
+from .schemas import GrowwEnvelope, GrowwError, HoldingsResponse, OrderDetailsResponse, OrderStatusResponse, PlaceOrderRequest, PlaceOrderResponse
 
 
 class Routes:
     PLACE_ORDER = "/order/create"
     ORDER_DETAILS = "/order/detail/{order_id}"
+    ORDER_BY_REFERENCE = "/order/status/reference/{reference_id}"
     HOLDINGS = "/holdings/user"
 
 
@@ -36,6 +37,15 @@ class GrowwClient(BaseBrokerClient):
     async def order_details(self, order_id: str) -> OrderDetailsResponse:
         body = await self.request("GET", Routes.ORDER_DETAILS.format(order_id=order_id), params={"segment": Segment.CASH.value})
         return self.parse(GrowwEnvelope[OrderDetailsResponse], body).payload
+
+    async def order_by_reference(self, reference_id: str) -> OrderStatusResponse | None:
+        """Groww is the only broker with a direct lookup by client reference."""
+        try:
+            body = await self.request("GET", Routes.ORDER_BY_REFERENCE.format(reference_id=reference_id),
+                                      params={"segment": Segment.CASH.value})
+        except BrokerRequestError:
+            return None  # no order with this reference
+        return self.parse(GrowwEnvelope[OrderStatusResponse], body).payload
 
     async def holdings(self) -> HoldingsResponse:
         body = await self.request("GET", Routes.HOLDINGS)

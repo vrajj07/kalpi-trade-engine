@@ -1,3 +1,11 @@
+import os
+import tempfile
+
+# API tests run against a throwaway SQLite file; set before any src module reads settings.
+os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{tempfile.mkdtemp()}/test.db"
+os.environ["ORDER_TIMEOUT_SECONDS"] = "0.2"
+os.environ["ORDER_POLL_INTERVAL_SECONDS"] = "0.01"
+
 import pytest
 from tenacity import wait_none
 

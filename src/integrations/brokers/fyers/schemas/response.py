@@ -15,6 +15,7 @@ class OrderResponse(BaseModel):
     filledQty: int = 0
     tradedPrice: Decimal | None = None
     message: str | None = None
+    orderTag: str | None = None  # order book may prefix it, e.g. "2:<tag>"
 
 
 class OrderBookResponse(FyersStatus):

@@ -6,11 +6,12 @@ import httpx
 from ..common.client import BaseBrokerClient
 from ..errors import BrokerAuthError, BrokerError, BrokerRequestError, BrokerUnavailableError, OrderRejectedError
 from .enums import ErrorType, Variety
-from .schemas import HoldingResponse, KiteEnvelope, KiteError, OrderHistoryEntry, PlaceOrderRequest, PlaceOrderResponse
+from .schemas import HoldingResponse, KiteEnvelope, KiteError, OrderBookEntry, OrderHistoryEntry, PlaceOrderRequest, PlaceOrderResponse
 
 
 class Routes:
     PLACE_ORDER = f"/orders/{Variety.REGULAR}"
+    ORDER_BOOK = "/orders"
     ORDER_HISTORY = "/orders/{order_id}"
     HOLDINGS = "/portfolio/holdings"
 
@@ -32,6 +33,10 @@ class ZerodhaClient(BaseBrokerClient):
     async def order_history(self, order_id: str) -> list[OrderHistoryEntry]:
         body = await self.request("GET", Routes.ORDER_HISTORY.format(order_id=order_id))
         return self.parse(KiteEnvelope[list[OrderHistoryEntry]], body).data  # oldest first
+
+    async def order_book(self) -> list[OrderBookEntry]:
+        body = await self.request("GET", Routes.ORDER_BOOK)
+        return self.parse(KiteEnvelope[list[OrderBookEntry]], body).data
 
     async def holdings(self) -> list[HoldingResponse]:
         body = await self.request("GET", Routes.HOLDINGS)

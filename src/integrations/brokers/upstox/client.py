@@ -6,13 +6,14 @@ import httpx
 from ..common.client import BaseBrokerClient
 from ..errors import BrokerAuthError, BrokerError, BrokerRequestError, OrderRejectedError
 from .enums import AUTH_ERRORS
-from .schemas import HoldingResponse, OrderDetailsResponse, PlaceOrderRequest, PlaceOrderResponse, UpstoxEnvelope, UpstoxError
+from .schemas import HoldingResponse, OrderBookEntry, OrderDetailsResponse, PlaceOrderRequest, PlaceOrderResponse, UpstoxEnvelope, UpstoxError
 
 
 class Routes:
     # Order writes go to the HFT host; reads stay on the main API host (base_url).
     PLACE_ORDER = "https://api-hft.upstox.com/v3/order/place"
     ORDER_DETAILS = "/v2/order/details"
+    ORDER_BOOK = "/v2/order/retrieve-all"
     HOLDINGS = "/v2/portfolio/long-term-holdings"
 
 
@@ -34,6 +35,10 @@ class UpstoxClient(BaseBrokerClient):
     async def order_details(self, order_id: str) -> OrderDetailsResponse:
         body = await self.request("GET", Routes.ORDER_DETAILS, params={"order_id": order_id})
         return self.parse(UpstoxEnvelope[OrderDetailsResponse], body).data
+
+    async def order_book(self) -> list[OrderBookEntry]:
+        body = await self.request("GET", Routes.ORDER_BOOK)
+        return self.parse(UpstoxEnvelope[list[OrderBookEntry] | None], body).data or []
 
     async def holdings(self) -> list[HoldingResponse]:
         body = await self.request("GET", Routes.HOLDINGS)

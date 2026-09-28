@@ -53,7 +53,7 @@ def get_adapter(broker: BrokerName, credentials: BrokerCredentials | None = None
 def credentials_from_settings(broker: BrokerName) -> BrokerCredentials:
     if broker is BrokerName.MOCK:
         mock = mock_config
-        return BrokerCredentials(access_token=SecretStr("mock"), extra={"holdings": mock.holdings, "fail": mock.fail})
+        return BrokerCredentials(access_token=SecretStr("mock"), extra={"holdings": mock.holdings, "cash": mock.cash, "fail": mock.fail})
 
     conf = _CONFIGS[broker]
     if conf.access_token is None:
@@ -67,3 +67,11 @@ def credentials_from_settings(broker: BrokerName) -> BrokerCredentials:
         # Broker-specific extras, e.g. AngelOne's client IP / MAC headers.
         extra=conf.model_dump(exclude={"api_key", "access_token", "client_id"}),
     )
+
+
+def is_configured(broker: BrokerName) -> bool:
+    try:
+        credentials_from_settings(broker)
+    except BrokerNotConfiguredError:
+        return False
+    return True

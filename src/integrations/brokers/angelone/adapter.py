@@ -28,6 +28,10 @@ class AngelOneBroker(BrokerAdapter):
     async def get_order(self, broker_order_id: str) -> BrokerOrder:
         return mappers.to_broker_order(broker_order_id, await self.client.order_details(broker_order_id))
 
+    async def find_order(self, tag: str) -> BrokerOrder | None:
+        match = next((o for o in await self.client.order_book() if o.ordertag == tag), None)
+        return mappers.to_broker_order(match.uniqueorderid, match) if match else None
+
     async def get_holdings(self) -> list[Holding]:
         return mappers.to_holdings(await self.client.holdings())
 

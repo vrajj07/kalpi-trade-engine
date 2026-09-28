@@ -189,3 +189,36 @@ async def test_malformed_error_body_still_maps_cleanly():
     async with UpstoxBroker(CREDS) as broker:
         with pytest.raises(BrokerRequestError):
             await broker.get_order("U1")
+
+
+@pytest.mark.parametrize(("broker", "url", "body"), [
+    (ZerodhaBroker, "https://api.kite.trade/orders", {"status": "success", "data": [
+        {"order_id": "1", "tag": "other0001", "status": "COMPLETE"},
+        {"order_id": "2", "tag": "kalpi0001", "status": "COMPLETE", "filled_quantity": 3}]}),
+    (FyersBroker, "https://api-t1.fyers.in/api/v3/orders", {"s": "ok", "code": 200, "message": "", "orderBook": [
+        {"id": "2", "orderTag": "2:kalpi0001", "status": 2, "filledQty": 3}]}),
+    (AngelOneBroker, "https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/getOrderBook",
+     {"status": True, "message": "SUCCESS", "errorcode": "", "data": [
+         {"uniqueorderid": "2", "ordertag": "kalpi0001", "orderstatus": "complete", "filledshares": 3}]}),
+    (UpstoxBroker, "https://api.upstox.com/v2/order/retrieve-all", {"status": "success", "data": [
+        {"order_id": "2", "tag": "kalpi0001", "status": "complete", "filled_quantity": 3}]}),
+    (GrowwBroker, "https://api.groww.in/v1/order/status/reference/kalpi0001", {"status": "SUCCESS", "payload": {
+        "groww_order_id": "2", "order_status": "EXECUTED", "filled_quantity": 3}}),
+])
+@respx.mock
+async def test_find_order_by_tag(broker, url, body):
+    respx.get(url).mock(return_value=respx.MockResponse(200, json=body))
+    async with broker(CREDS) as adapter:
+        found = await adapter.find_order("kalpi0001")
+    assert (found.broker_order_id, found.status, found.filled_quantity) == ("2", OrderStatus.COMPLETE, 3)
+
+
+@respx.mock
+async def test_find_order_returns_none_when_tag_absent():
+    respx.get("https://api.kite.trade/orders").mock(return_value=respx.MockResponse(200, json={
+        "status": "success", "data": [{"order_id": "1", "tag": "other0001", "status": "OPEN"}]}))
+    respx.get("https://api.groww.in/v1/order/status/reference/kalpi0001").mock(return_value=respx.MockResponse(
+        404, json={"status": "FAILURE", "error": {"code": "GA004", "message": "Order not found"}}))
+    async with ZerodhaBroker(CREDS) as zerodha, GrowwBroker(CREDS) as groww:
+        assert await zerodha.find_order("kalpi0001") is None
+        assert await groww.find_order("kalpi0001") is None

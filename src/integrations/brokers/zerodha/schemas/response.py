@@ -14,6 +14,11 @@ class OrderHistoryEntry(BaseModel):
     status_message: str | None = None
 
 
+class OrderBookEntry(OrderHistoryEntry):
+    order_id: str
+    tag: str | None = None
+
+
 class HoldingResponse(BaseModel):
     tradingsymbol: str
     exchange: str

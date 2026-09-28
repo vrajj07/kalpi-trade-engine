@@ -91,6 +91,15 @@ class BrokerAdapter(ABC):
         """Fetch the current state of a previously placed order."""
 
     @abstractmethod
+    async def find_order(self, tag: str) -> BrokerOrder | None:
+        """Today's order carrying this client tag, or None if the broker has none.
+
+        Brokers do not reject duplicate tags, so this lookup is how the caller makes
+        placement idempotent (check before write) and reconciles an unknown outcome.
+        Order books cover the current trading day only.
+        """
+
+    @abstractmethod
     async def get_holdings(self) -> list[Holding]:
         """Delivery holdings in the user's demat account."""
 

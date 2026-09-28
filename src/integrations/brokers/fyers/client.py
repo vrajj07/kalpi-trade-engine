@@ -36,6 +36,9 @@ class FyersClient(BaseBrokerClient):
             raise BrokerRequestError(f"Order {order_id} not found", broker=self.broker)
         return matches[0]
 
+    async def order_book(self) -> list[OrderResponse]:
+        return self.parse(OrderBookResponse, await self.request("GET", Routes.ORDER_BOOK)).orderBook
+
     async def holdings(self) -> HoldingsResponse:
         return self.parse(HoldingsResponse, await self.request("GET", Routes.HOLDINGS))
 

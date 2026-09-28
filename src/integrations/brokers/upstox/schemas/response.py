@@ -14,6 +14,11 @@ class OrderDetailsResponse(BaseModel):
     status_message: str | None = None
 
 
+class OrderBookEntry(OrderDetailsResponse):
+    order_id: str
+    tag: str | None = None
+
+
 class HoldingResponse(BaseModel):
     trading_symbol: str
     exchange: str
