@@ -188,8 +188,25 @@ def test_users_are_isolated(client):
     wait_finished(client, mine)
 
 
-def test_missing_user_is_rejected(client):
-    assert client.get(BROKERS, headers={"X-User-Id": ""}).status_code == 422
+@pytest.mark.parametrize("user", ["", "u" * 65])
+def test_invalid_user_is_unauthenticated(client, user):
+    response = client.get(BROKERS, headers={"X-User-Id": user})
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+
+
+def test_every_route_but_health_requires_a_user():
+    """Secure by default: a new route is authenticated unless it opts out explicitly."""
+    public = {f"{settings.api_prefix}/health"}
+    for path, operations in app.openapi()["paths"].items():
+        for method, operation in operations.items():
+            if path not in public:
+                assert {"GatewayUser": []} in operation.get("security", []), f"{method.upper()} {path}"
+
+
+def test_missing_user_header_is_unauthenticated():
+    with TestClient(app) as anonymous:
+        assert anonymous.get(BROKERS).status_code == 401
 
 
 def test_finished_execution_report_is_delivered_through_the_outbox(client, monkeypatch):

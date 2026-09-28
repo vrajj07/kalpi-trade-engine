@@ -76,7 +76,12 @@ or a future queue worker. `GET` on the connection shows its status, and `DELETE`
 
 - **Who the user is.** Every request carries `X-User-Id`, set by the upstream API gateway after it has
   authenticated the user. This is an internal service that trusts that header, so it must never be
-  exposed publicly. Everything is scoped by it:
+  exposed publicly.
+  - `src/core/auth.py` reads it, and is applied to every router except health (`api/__init__.py`), so a
+    new endpoint is authenticated by default. A missing or invalid header is `401`.
+  - Swapping the header for a verified token (a signed JWT) changes only that file.
+
+  Everything is scoped by it:
   - connections are keyed by `(user_id, broker)`
   - Idempotency-Keys are unique per user, so one user's key never replays another user's execution
   - another user's execution returns `404`, not `403`, so the API does not reveal that it exists
