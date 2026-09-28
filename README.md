@@ -19,7 +19,8 @@ curl localhost:8000/api/v1/health
 make down
 ```
 
-API docs: http://localhost:8000/api/v1/docs
+**API docs (Swagger UI):** http://localhost:8000/api/v1/docs, available while the local server is running
+(`make up` or `make run`). Click **Authorize** and enter any user id to send `X-User-Id` on every call.
 
 Try every endpoint:
 - **Postman:** import `docs/kalpi.postman_collection.json` and `docs/kalpi.postman_environment.json`, select
