@@ -10,9 +10,16 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dao.execution import ExecutionDAO
+from src.integrations.brokers.errors import BrokerAuthError, BrokerError
+from src.integrations.brokers.registry import get_adapter
 from src.models import Execution, ExecutionEvent
 from src.modules.execution import ExecutionModule
-from src.modules.execution.exceptions import ExecutionModuleError, ExecutionNotFoundError
+from src.modules.execution.exceptions import (
+    BrokerSessionExpiredError,
+    ExecutionModuleError,
+    ExecutionNotFoundError,
+    HoldingsUnavailableError,
+)
 from src.modules.execution.validators import ExecutionValidator
 from src.schemas.execution import ExecutionCreate
 from src.utils.exceptions import InternalServerError
@@ -33,7 +40,16 @@ class ExecutionService:
             execution = await self.dao.get_by_idempotency_key(idempotency_key)
             created = False
             if execution is None:
+                # A replay is not re-checked against holdings: its own fills have changed them.
                 self.validator.validate(request)
+                try:
+                    async with get_adapter(request.broker) as adapter:
+                        holdings = await adapter.get_holdings()
+                except BrokerAuthError as exc:
+                    raise BrokerSessionExpiredError(request.broker) from exc
+                except BrokerError as exc:  # fail closed: an unchecked request is not placed
+                    raise HoldingsUnavailableError(request.broker, exc.message) from exc
+                self.validator.validate_against_holdings(request, holdings)
                 execution, created = await self.execution_module.create(idempotency_key, request, fingerprint)
             self.validator.validate_replay(execution, fingerprint)
             await self.execution_module.start(execution)  # new, or resume one a restart interrupted

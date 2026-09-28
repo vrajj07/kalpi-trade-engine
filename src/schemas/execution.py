@@ -26,11 +26,36 @@ class Instruction(BaseModel):
         return v.strip().upper()
 
 
+class TargetHolding(BaseModel):
+    """One stock of a first-time portfolio: the quantity to end up holding."""
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(min_length=1, max_length=32, examples=["INFY"])
+    exchange: Exchange = Exchange.NSE
+    quantity: int = Field(gt=0)
+
+    @field_validator("symbol")
+    @classmethod
+    def _upper(cls, v: str) -> str:
+        return v.strip().upper()
+
+
 class ExecutionCreate(BaseModel):
+    """Exactly one of:
+    - `target`: a first-time portfolio (the user holds nothing yet); every stock becomes a BUY.
+    - `instructions`: an explicit rebalance of an existing portfolio (SELL / BUY / REBALANCE).
+    """
     model_config = ConfigDict(extra="forbid")
 
     broker: BrokerName
-    instructions: list[Instruction] = Field(min_length=1, max_length=100)
+    target: list[TargetHolding] | None = Field(default=None, min_length=1, max_length=100)
+    instructions: list[Instruction] | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _exactly_one_mode(self) -> Self:
+        if (self.target is None) == (self.instructions is None):
+            raise ValueError("Send exactly one of 'target' (first-time portfolio) or 'instructions' (rebalance)")
+        return self
 
 
 class OrderReport(BaseModel):

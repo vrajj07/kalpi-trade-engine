@@ -24,7 +24,7 @@ from src.models.enums import ExecutionState
 from src.modules.execution.executor import Executor
 from src.modules.execution.helpers import lifecycle, runner
 from src.modules.execution.helpers.idempotency import request_hash
-from src.modules.execution.helpers.planner import plan
+from src.modules.execution.helpers.planner import instructions_for, plan
 from src.modules.notification.base import get_notifier
 from src.schemas.execution import ExecutionCreate, ExecutionReport
 
@@ -52,7 +52,7 @@ class ExecutionModule:
         execution = Execution(id=uuid.uuid4(), idempotency_key=idempotency_key, request_hash=fingerprint,
                               broker=request.broker, state=ExecutionState.RUNNING,
                               expires_at=lifecycle.next_market_close(datetime.now(UTC)))
-        execution.orders = plan(execution.id, request.instructions)
+        execution.orders = plan(execution.id, instructions_for(request))
         try:
             await self.dao.create(execution)
         except IntegrityError:

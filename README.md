@@ -64,6 +64,22 @@ and remove `init_db()` from the startup lifespan.
 
 ### Request
 
+A request is **exactly one** of two modes.
+
+**First-time portfolio: `target`.** The stocks and quantities to end up holding. The user must hold
+nothing yet, and every stock becomes a `BUY`.
+
+```bash
+curl -X POST localhost:8000/api/v1/executions \
+  -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" \
+  -d '{"broker": "mock", "target": [
+        {"symbol": "INFY", "quantity": 5},
+        {"symbol": "TCS",  "quantity": 2}]}'
+```
+
+**Rebalance: `instructions`.** As the assignment specifies, the engine does not compute the delta: the
+payload says what to do with each stock.
+
 ```bash
 curl -X POST localhost:8000/api/v1/executions \
   -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" \
@@ -74,8 +90,32 @@ curl -X POST localhost:8000/api/v1/executions \
 # 202 + Location: /api/v1/executions/{id}  ->  GET it for the report, GET .../events for the audit trail
 ```
 
-- A first-time portfolio is all `BUY`s. `REBALANCE` carries a signed change (`-2` sells 2, `+2` buys 2).
-- `price` makes it a LIMIT order; omitted means MARKET. One instruction per symbol.
+- `price` makes it a LIMIT order; omitted means MARKET. One entry per symbol.
+- `REBALANCE` carries a signed change: `-2` sells 2, `+2` buys 2.
+
+### Validation against holdings
+
+Before anything is saved or sent, the service reads the user's holdings from the broker and checks that
+every action keeps its meaning:
+
+| Request | Rule | If broken |
+|---|---|---|
+| `target` | Nothing is held | `409 PortfolioNotEmptyError`: send explicit instructions instead |
+| `BUY` | The stock is not held (a new stock) | `422`, hint: `REBALANCE +q` |
+| `SELL` | The stock is held, and `quantity` equals the whole holding (an exit) | `422`, hint: `REBALANCE -q` for a partial reduce |
+| `REBALANCE -q` | The stock is held, and `q` is at most the holding | `422` |
+| `REBALANCE +q` | The stock is held | `422`, hint: `BUY` |
+
+- **SELL is strict.** A partial SELL would mean the same as `REBALANCE -q`, giving two ways to say one
+  thing. Worse, it hides a disagreement between the model's view of the portfolio and the broker's: if the
+  model thinks 7 are held but 10 are, a lenient SELL leaves 3 orphan shares. The strict rule rejects it at
+  submission.
+- **All errors at once.** Every broken rule is reported in `error.details`, with its index.
+- **Fail closed.** If holdings cannot be read, nothing is saved or placed: `503`, or `401` for an expired
+  broker session. Retrying with the same `Idempotency-Key` is safe, because the check runs before the
+  execution record is written.
+- **A replay is not re-checked.** A resumed execution's own fills have already changed the holdings.
+- **A guard, not a guarantee.** See "Known limitations" (TOCTOU).
 
 ### Execution order: follow the money
 
@@ -156,11 +196,23 @@ It generalises when a second workflow appears (for example scheduled SIP buys):
 ### Notification
 
 The final report goes to `NOTIFICATION_WEBHOOK_URL` if it is set; otherwise it is logged. Delivery is
-at-least-once with 3 attempts, so consumers should deduplicate on `id`. Try failure modes with the mock
-broker: `MOCK_CASH=1000` and `MOCK_FAIL={"INFY": "unknown"}`. The modes are listed in `.env.example`.
+at-least-once with 3 attempts, so consumers should deduplicate on `id`.
+
+The mock broker is configured in `.env` (modes listed in `.env.example`):
+- `MOCK_HOLDINGS={}` to try a first-time `target` portfolio
+- `MOCK_CASH=1000` to trigger an insufficient-funds rejection
+- `MOCK_FAIL={"INFY": "unknown"}` to try a failure mode
 
 ### Known limitations
 
+- **Holdings checks are a guard, not a guarantee.**
+  - *Time-of-check to time-of-use (TOCTOU):* holdings are read at submission, and the investor can still
+    trade in the broker's own app before the orders are sent.
+  - *Holdings are not the sellable quantity:* holdings are settled shares. Today's buys (still under
+    positions), shares blocked by open orders and pledged shares are not counted.
+
+  Only the broker can check and act atomically, so its rejection remains the source of truth, the same as
+  for funds.
 - **No funds pre-check.** The broker's rejection is the source of truth. A `get_funds()` pre-flight
   would let unaffordable buys be skipped with an exact reason before sending. It is only a snapshot
   (time-of-check to time-of-use, TOCTOU), so the broker's rejection would still be needed as a backstop.

@@ -8,6 +8,8 @@ from src.utils.exceptions import (
     ConflictError,
     InternalServerError,
     NotFoundError,
+    ServiceUnavailableError,
+    UnauthorizedError,
     UnprocessableEntityError,
 )
 
@@ -26,6 +28,9 @@ class ExecutionModuleError(Exception):
             IdempotencyKeyReusedError: ConflictError,
             InvalidInstructionsError: UnprocessableEntityError,
             UnconfiguredBrokerError: BadRequestError,
+            PortfolioNotEmptyError: ConflictError,
+            BrokerSessionExpiredError: UnauthorizedError,
+            HoldingsUnavailableError: ServiceUnavailableError,
         }
         error_cls = exception_mapping.get(type(exc), InternalServerError)
         return error_cls(exc.message, code=type(exc).__name__, details=getattr(exc, "errors", None))
@@ -54,6 +59,26 @@ class InvalidInstructionsError(ExecutionModuleError):
 class UnconfiguredBrokerError(ExecutionModuleError):
     def __init__(self, broker: BrokerName) -> None:
         super().__init__(f"Broker '{broker}' is not configured: set its credentials in the environment")
+
+
+class PortfolioNotEmptyError(ExecutionModuleError):
+    """A target portfolio is only for a first-time investor; a rebalance needs explicit instructions."""
+
+    def __init__(self, held: int) -> None:
+        super().__init__(f"A target portfolio is for a first-time portfolio, but {held} stock(s) are already "
+                         "held. Send explicit SELL / BUY / REBALANCE instructions instead.")
+
+
+class BrokerSessionExpiredError(ExecutionModuleError):
+    def __init__(self, broker: BrokerName) -> None:
+        super().__init__(f"Broker '{broker}' rejected the session. Log in to the broker again, then resubmit.")
+
+
+class HoldingsUnavailableError(ExecutionModuleError):
+    """Fail closed: without current holdings the request cannot be checked, so nothing is placed."""
+
+    def __init__(self, broker: BrokerName, details: str) -> None:
+        super().__init__(f"Could not read holdings from '{broker}', nothing was placed; retry later: {details}")
 
 
 class IllegalTransitionError(ExecutionModuleError):

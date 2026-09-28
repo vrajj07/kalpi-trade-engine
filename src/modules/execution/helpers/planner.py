@@ -4,7 +4,7 @@ import uuid
 
 from src.integrations.brokers.enums import OrderType, Side
 from src.models import ExecutionOrder
-from src.schemas.execution import Instruction
+from src.schemas.execution import ExecutionCreate, Instruction
 
 from src.models.enums import Action, OrderState, Phase
 
@@ -16,6 +16,14 @@ def order_tag(execution_id: uuid.UUID, position: int) -> str:
     20 hex chars (80 bits) fits every broker's limit (8-20 alphanumerics).
     """
     return hashlib.sha256(f"{execution_id}:{position}".encode()).hexdigest()[:20]
+
+
+def instructions_for(request: ExecutionCreate) -> list[Instruction]:
+    """A first-time target portfolio is all BUYs; a rebalance brings its own instructions."""
+    if request.target is not None:
+        return [Instruction(action=Action.BUY, symbol=t.symbol, exchange=t.exchange, quantity=t.quantity)
+                for t in request.target]
+    return request.instructions
 
 
 def plan(execution_id: uuid.UUID, instructions: list[Instruction]) -> list[ExecutionOrder]:

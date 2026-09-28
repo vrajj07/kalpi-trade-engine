@@ -20,6 +20,11 @@ class BadRequestError(AppError):
     code = "bad_request"
 
 
+class UnauthorizedError(AppError):
+    status_code = 401
+    code = "unauthorized"
+
+
 class NotFoundError(AppError):
     status_code = 404
     code = "not_found"
@@ -38,3 +43,8 @@ class UnprocessableEntityError(AppError):
 class InternalServerError(AppError):
     status_code = 500
     code = "internal_error"
+
+
+class ServiceUnavailableError(AppError):
+    status_code = 503
+    code = "service_unavailable"

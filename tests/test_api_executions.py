@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 
 from src.core.config import settings
 from src.integrations.brokers import registry
+from src.integrations.brokers.errors import BrokerAuthError, BrokerUnavailableError
+from src.integrations.brokers.mock import MockBroker
 from src.core.config.mock import MockConfig
 from src.main import app
 from src.modules.notification.base import WebhookNotifier
@@ -76,6 +78,40 @@ def test_invalid_instructions_are_422_with_every_error(client):
     error = response.json()["error"]
     assert error["code"] == "InvalidInstructionsError"
     assert len(error["details"]) == 2
+
+
+def test_first_time_target_portfolio_buys_everything(client, monkeypatch):
+    monkeypatch.setattr(registry, "mock_config", MockConfig(holdings={}))
+    body = {"broker": "mock", "target": [{"symbol": "INFY", "quantity": 5}, {"symbol": "TCS", "quantity": 2}]}
+    report = wait_finished(client, submit(client, body).json()["id"])
+    assert [(o["action"], o["symbol"], o["quantity"], o["state"]) for o in report["orders"]] == [
+        ("BUY", "INFY", 5, "FILLED"), ("BUY", "TCS", 2, "FILLED")]
+
+
+def test_target_portfolio_with_existing_holdings_conflicts(client):
+    response = submit(client, {"broker": "mock", "target": [{"symbol": "WIPRO", "quantity": 1}]})
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "PortfolioNotEmptyError"
+
+
+def test_partial_sell_is_422_with_rebalance_hint(client):
+    response = submit(client, {"broker": "mock", "instructions": [
+        {"action": "SELL", "symbol": "INFY", "quantity": 4}]})
+    assert response.status_code == 422
+    assert "use REBALANCE -4" in response.json()["error"]["details"][0]
+
+
+@pytest.mark.parametrize("error, status", [
+    (BrokerUnavailableError("down", broker="mock"), 503),
+    (BrokerAuthError("expired", broker="mock"), 401),
+])
+def test_holdings_read_failure_fails_closed(client, monkeypatch, error, status):
+    async def fail(self):
+        raise error
+    monkeypatch.setattr(MockBroker, "get_holdings", fail)
+    response = submit(client)
+    assert response.status_code == status
+    assert "id" not in response.json()  # nothing was persisted or placed
 
 
 def test_same_key_same_body_replays_without_trading_again(client):
