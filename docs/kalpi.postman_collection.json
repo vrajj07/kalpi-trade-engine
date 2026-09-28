@@ -1,0 +1,1239 @@
+{
+  "info": {
+    "_postman_id": "da8f7155-360f-5b8e-874b-75011145bdb8",
+    "name": "Kalpi Trade Engine",
+    "description": "Every endpoint of the trade execution engine, with a test on each request.\n\nSelect the **kalpi** environment (docs/kalpi.postman_environment.json). The mock broker needs MOCK_HOLDINGS={\"INFY\": 10, \"TCS\": 5} in .env (then make up).\n\nRun the whole collection in order with the Collection Runner, or send requests one by one (folder 1 first: it connects the broker).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Setup",
+      "description": "Run in order: the connection made here is used by every later folder.",
+      "item": [
+        {
+          "name": "Health (public)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get connection before connecting",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/brokers/mock/connection",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers",
+                "mock",
+                "connection"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"not connected\", () => pm.expect(pm.response.json().error.code).to.eql(\"BrokerNotConnectedError\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Execute before connecting",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"broker\": \"mock\",\n  \"instructions\": [\n    {\n      \"action\": \"BUY\",\n      \"symbol\": \"WIPRO\",\n      \"quantity\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"not connected\", () => pm.expect(pm.response.json().error.code).to.eql(\"BrokerNotConnectedError\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Connect mock broker",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/brokers/mock/connection",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers",
+                "mock",
+                "connection"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"access_token\": \"mock-token\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"token never returned\", () => pm.expect(pm.response.text()).to.not.include(\"mock-token\"));",
+                  "pm.test(\"active\", () => pm.expect(pm.response.json().status).to.eql(\"ACTIVE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Connect with client id and expiry (AngelOne shape)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/brokers/mock/connection",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers",
+                "mock",
+                "connection"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"access_token\": \"mock-token\",\n  \"client_id\": \"A123456\",\n  \"expires_at\": \"2030-12-31T10:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List brokers with connection status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/brokers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"five brokers plus mock\", () => pm.expect(pm.response.json().length).to.eql(6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Holdings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/brokers/mock/holdings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers",
+                "mock",
+                "holdings"
+              ]
+            },
+            "description": "Needs MOCK_HOLDINGS={\"INFY\": 10, \"TCS\": 5} in .env (then make up)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown broker",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/brokers/notabroker/connection",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers",
+                "notabroker",
+                "connection"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Executions",
+      "description": "",
+      "item": [
+        {
+          "name": "Rebalance: SELL, REBALANCE, BUY",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions"
+              ]
+            },
+            "description": "Generates a new idempotency_key and saves the new execution's id as execution_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"broker\": \"mock\",\n  \"instructions\": [\n    {\n      \"action\": \"SELL\",\n      \"symbol\": \"INFY\",\n      \"quantity\": 10\n    },\n    {\n      \"action\": \"REBALANCE\",\n      \"symbol\": \"TCS\",\n      \"quantity\": 2\n    },\n    {\n      \"action\": \"BUY\",\n      \"symbol\": \"WIPRO\",\n      \"quantity\": 3\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set(\"idempotency_key\", pm.variables.replaceIn(\"{{$randomUUID}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 202\", () => pm.response.to.have.status(202));",
+                  "pm.environment.set(\"execution_id\", pm.response.json().id);",
+                  "pm.test(\"Location header\", () => pm.response.to.have.header(\"Location\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay: same key, same body",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"broker\": \"mock\",\n  \"instructions\": [\n    {\n      \"action\": \"SELL\",\n      \"symbol\": \"INFY\",\n      \"quantity\": 10\n    },\n    {\n      \"action\": \"REBALANCE\",\n      \"symbol\": \"TCS\",\n      \"quantity\": 2\n    },\n    {\n      \"action\": \"BUY\",\n      \"symbol\": \"WIPRO\",\n      \"quantity\": 3\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 202\", () => pm.response.to.have.status(202));",
+                  "pm.test(\"same execution\", () => pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"execution_id\")));",
+                  "pm.test(\"marked as replay\", () => pm.expect(pm.response.headers.get(\"Idempotent-Replayed\")).to.eql(\"true\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same key, different body",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"broker\": \"mock\",\n  \"instructions\": [\n    {\n      \"action\": \"BUY\",\n      \"symbol\": \"WIPRO\",\n      \"quantity\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"key reused\", () => pm.expect(pm.response.json().error.code).to.eql(\"IdempotencyKeyReusedError\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Partial reduce and a LIMIT buy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"broker\": \"mock\",\n  \"instructions\": [\n    {\n      \"action\": \"REBALANCE\",\n      \"symbol\": \"INFY\",\n      \"quantity\": -4\n    },\n    {\n      \"action\": \"BUY\",\n      \"symbol\": \"HDFCBANK\",\n      \"exchange\": \"NSE\",\n      \"quantity\": 2,\n      \"price\": 1650.5\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 202\", () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Execution report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions/{{execution_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions",
+                "{{execution_id}}"
+              ]
+            },
+            "description": "State is RUNNING until the run finishes (moments with the mock); send again to see COMPLETED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"has orders\", () => pm.expect(pm.response.json().orders.length).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Audit trail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions/{{execution_id}}/events",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions",
+                "{{execution_id}}",
+                "events"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Target portfolio with holdings present",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions"
+              ]
+            },
+            "description": "With MOCK_HOLDINGS={} (then make up) the same request is 202, all BUYs.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"broker\": \"mock\",\n  \"target\": [\n    {\n      \"symbol\": \"INFY\",\n      \"quantity\": 5\n    },\n    {\n      \"symbol\": \"TCS\",\n      \"quantity\": 3\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"not first-time\", () => pm.expect(pm.response.json().error.code).to.eql(\"PortfolioNotEmptyError\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Validation",
+      "description": "",
+      "item": [
+        {
+          "name": "Partial SELL",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"broker\": \"mock\",\n  \"instructions\": [\n    {\n      \"action\": \"SELL\",\n      \"symbol\": \"INFY\",\n      \"quantity\": 5\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"REBALANCE hint\", () => pm.expect(pm.response.json().error.message).to.include(\"REBALANCE -5\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Every error at once (fail-slow)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"broker\": \"mock\",\n  \"instructions\": [\n    {\n      \"action\": \"BUY\",\n      \"symbol\": \"TCS\",\n      \"quantity\": 1\n    },\n    {\n      \"action\": \"SELL\",\n      \"symbol\": \"RELIANCE\",\n      \"quantity\": 1\n    },\n    {\n      \"action\": \"REBALANCE\",\n      \"symbol\": \"INFY\",\n      \"quantity\": -50\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"three errors\", () => pm.expect(pm.response.json().error.details.length).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same symbol twice",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"broker\": \"mock\",\n  \"instructions\": [\n    {\n      \"action\": \"BUY\",\n      \"symbol\": \"WIPRO\",\n      \"quantity\": 1\n    },\n    {\n      \"action\": \"BUY\",\n      \"symbol\": \"WIPRO\",\n      \"quantity\": 2\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Both target and instructions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"broker\": \"mock\",\n  \"target\": [\n    {\n      \"symbol\": \"INFY\",\n      \"quantity\": 1\n    }\n  ],\n  \"instructions\": [\n    {\n      \"action\": \"BUY\",\n      \"symbol\": \"WIPRO\",\n      \"quantity\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Missing Idempotency-Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"broker\": \"mock\",\n  \"instructions\": [\n    {\n      \"action\": \"BUY\",\n      \"symbol\": \"WIPRO\",\n      \"quantity\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Auth and tenancy",
+      "description": "",
+      "item": [
+        {
+          "name": "No user header",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/brokers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Another user's execution",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "someone-else"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions/{{execution_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions",
+                "{{execution_id}}"
+              ]
+            },
+            "description": "404, not 403: the API does not reveal that the execution exists."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown execution id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/executions/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "executions",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Connection expiry and disconnect",
+      "description": "",
+      "item": [
+        {
+          "name": "Connect with an expiry in the past",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/brokers/mock/connection",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers",
+                "mock",
+                "connection"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"access_token\": \"mock-token\",\n  \"expires_at\": \"2020-01-01T00:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Holdings with an expired session",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/brokers/mock/holdings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers",
+                "mock",
+                "holdings"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"expired\", () => pm.expect(pm.response.json().error.code).to.eql(\"BrokerConnectionExpiredError\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Connection shows EXPIRED",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/brokers/mock/connection",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers",
+                "mock",
+                "connection"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"expired\", () => pm.expect(pm.response.json().status).to.eql(\"EXPIRED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reconnect",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/brokers/mock/connection",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers",
+                "mock",
+                "connection"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"access_token\": \"mock-token\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Disconnect",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/brokers/mock/connection",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "brokers",
+                "mock",
+                "connection"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
