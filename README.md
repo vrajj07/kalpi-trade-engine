@@ -3,6 +3,9 @@
 Portfolio trade execution engine: takes a target portfolio (or explicit rebalance instructions),
 executes trades through a user's broker, and notifies the consumer with an execution report.
 
+**Problem Statement 2** (Multi-Frequency Financial Data Platform) is answered in the technical design
+document [`docs/design.md`](docs/design.md).
+
 ## Run
 
 One command does everything (.env → dependencies → tests → Docker stack → health check):
