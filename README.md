@@ -34,7 +34,111 @@ Run `make` to list all commands.
 
 ## Architecture
 
-_TODO_
+```
+HTTP ─► api/ (routers)          parse and shape the request; authentication (core/auth.py)
+          │
+          ▼
+        service/                one class per use case: gather data, validate semantics,
+          │                     orchestrate, convert domain errors to HTTP errors
+          ▼
+        modules/                the domain: one facade class per module
+          │  execution/         ExecutionModule: plan, write-ahead record, run, state machine
+          │  broker/            BrokerModule: users' connections, encrypted tokens, expiry
+          │  notification/      NotificationModule: outbox relay, delivery, retries
+          │
+          ├─► dao/ ─► utils/database.py (DatabaseService) ─► PostgreSQL
+          └─► integrations/brokers/  one adapter per broker, behind BrokerAdapter
+```
+
+Dependencies point one way, top to bottom. A router never touches a DAO, a module never raises an HTTP
+error, and nothing outside `integrations/brokers/` knows a broker's API.
+
+### Layers
+
+- **`api/`** (routers). Syntactic validation only, through the Pydantic schemas in `schemas/`: types,
+  lengths, "exactly one of `target` or `instructions`". Authentication is applied once per router in
+  `api/__init__.py` (see "Broker connections and authentication").
+- **`service/`**. `ExecutionService` and `BrokerService` stay thin: they gather data (holdings from the
+  broker, the stored connection), run the semantic validators, and call a module. Each method catches the
+  module's errors, rolls back, and converts them with `to_http_exception`, so the HTTP mapping lives in one
+  place per module.
+- **`modules/`**. Each module exposes one facade class in its `__init__.py`, the only thing the service
+  imports. Inside: `helpers/` (planner, lifecycle, runner, retry policy...), `validators/` (semantic checks,
+  fail-slow so every error is reported at once), and `exceptions.py` (a `ModuleError` base with its HTTP
+  mapping).
+- **`dao/` and `utils/database.py`**. DAOs say *what* they need; the generic `DatabaseService` owns *how* it
+  is queried and when the transaction commits, so query idioms live in one place.
+- **`models/`**. One package per module, each with its own `enums.py`. Enums live with the models, not the
+  modules, so models never import the domain.
+- **`middlewares/error_handler.py`**. Every error leaves as the same envelope:
+  `{"error": {"code", "message", "details"}}`.
+
+### Broker adapters
+
+Every broker implements `BrokerAdapter` (`integrations/brokers/base.py`), which is the only interface
+the executor sees:
+
+| Method | Used for |
+|---|---|
+| `place_order(order)` | send one order, tagged with its deterministic tag |
+| `get_order(broker_order_id)` | poll an order until it is final |
+| `find_order(tag)` | after a crash or a lost response: was this order placed? (never re-send blindly) |
+| `get_holdings()` | validation at submission, and first-time detection |
+
+Five real brokers (Zerodha, Fyers, AngelOne, Upstox, Groww) and a mock. Each broker is one package with the
+same shape:
+
+```
+integrations/brokers/zerodha/
+  adapter.py    BrokerAdapter implementation: domain in, domain out
+  client.py     endpoints, auth headers, the broker's error envelope
+  builder.py    domain OrderRequest ─► broker request schema
+  mappers.py    broker response ─► domain BrokerOrder / Holding, status mapping
+  enums.py      the broker's own codes
+  schemas/      request / response models (Pydantic): a changed response shape fails loudly
+```
+
+- **One transport for all brokers.** `common/client.py` (`BaseBrokerClient`) owns HTTP, rate limiting,
+  retries and error mapping. A broker client only adds its endpoints, headers and error parsing.
+- **Errors carry the decision, not the code.** Broker errors map onto one taxonomy (`errors.py`): auth,
+  rate limit, unavailable, rejected, instrument not found, *state unknown*. Callers decide from the class
+  (and its `retryable` flag), never from a broker's error codes.
+- **Retries only when provably safe.** A request is retried only when the broker provably did not act
+  on it: `429`, `503`, or a connection that was never established. A timeout or `5xx` after an order `POST`
+  becomes `OrderStateUnknownError` and is never retried; the executor reconciles it with `find_order(tag)`.
+- **Rate limits per broker account.** A leaky-bucket limiter (`aiolimiter`) per `(broker, account)`, shared by
+  every client for that account, with each broker's published order limit. `Retry-After` is honoured.
+  In-process only: several replicas would need a distributed limiter (for example a Redis token bucket).
+- **Composition root.** `registry.py` is the only place that reads broker configuration and maps a
+  `BrokerName` to its adapter. Adding a broker is one package plus one registry line.
+
+### Request lifecycle
+
+`POST /executions` with an `Idempotency-Key`:
+
+1. **Authenticate** (`core/auth.py`) and parse the body (`schemas/execution.py`).
+2. **Replay check.** The key is looked up for this user. Same body: return (and resume) that execution.
+   Different body: `409`.
+3. **Validate** (`ExecutionValidator`): the instructions, then against live holdings from the broker (fail
+   closed: `503` if they cannot be read, `401` if the session has expired).
+4. **Plan and write ahead** (`ExecutionModule.create`). Every order is persisted with its phase, position
+   and deterministic tag, before anything is sent.
+5. **`202 Accepted`**, and the run starts in the background (`helpers/runner.py`).
+6. **Run** (`executor.py`). RELEASE orders in parallel, the gate, then SPEND orders in sequence. Every state
+   change goes through `transitions.py` and is logged in `execution_events`.
+7. **Notify.** The final transition writes an outbox row in the same transaction; the relay delivers the
+   report (see "Notification").
+
+Where each design decision is explained:
+
+| Decision | Section |
+|---|---|
+| Sell before buy, gate on unresolved sells | "Execution order: follow the money" |
+| No duplicate orders (deterministic tags, write-ahead, reconcile by tag) | "Never place an order twice" |
+| State machine guard and append-only audit log, not a workflow engine | "State machine and audit log" |
+| Transactional outbox for notifications | "Notification" |
+| Per-user encrypted broker sessions | "Broker connections and authentication" |
+| Queue workers, partitioning | "Path to production", "Scaling the audit log" |
 
 ### Schema management
 
@@ -404,4 +508,42 @@ separate delivery workers POST. That is one more `Notifier`; the outbox, the cla
 
 ## Third-party libraries
 
-_TODO_
+Kept deliberately small: each library replaces code that is easy to get subtly wrong.
+
+| Library | Used for | Why this one |
+|---|---|---|
+| `fastapi`, `uvicorn` | HTTP API, ASGI server | Async end to end, which suits an I/O-bound engine that waits on broker APIs. Request validation and OpenAPI docs come from the same Pydantic models. |
+| `pydantic`, `pydantic-settings` | Request/response schemas, broker schemas, settings | One validation model everywhere: API bodies, broker responses (a changed shape fails loudly instead of flowing on as `None`), and typed settings from the environment with `SecretStr` for tokens. |
+| `sqlalchemy[asyncio]` 2.0 | ORM and queries | Async sessions, typed `Mapped[...]` models, `WriteOnlyMapped` for the append-only audit log, `FOR UPDATE SKIP LOCKED` for the outbox. |
+| `psycopg[binary]` 3 | PostgreSQL driver | The maintained successor to psycopg2, with native async support. |
+| `httpx` | Broker REST calls, webhook delivery | Async, with timeouts and connection pooling. It separates *connect* errors (never reached the broker, safe to retry) from errors after the request was sent, which is what decides whether an order may be retried. |
+| `tenacity` | Retrying broker calls | Declarative retry policy (which errors, how many attempts, exponential backoff with jitter, `Retry-After`), instead of a hand-written loop per call site. |
+| `aiolimiter` | Per-account rate limiting | A small async leaky-bucket limiter; brokers publish per-second order limits. |
+| `cryptography` | Encrypting broker tokens at rest | Fernet is authenticated encryption (AES-CBC + HMAC), so a tampered token fails to decrypt instead of decrypting to garbage. `MultiFernet` gives key rotation. The standard, audited choice, instead of combining primitives by hand. |
+
+Development only:
+
+| Library | Used for |
+|---|---|
+| `pytest`, `pytest-asyncio` | Tests, including async ones |
+| `respx` | Mocking `httpx` at the transport layer: broker adapters and webhooks are tested against recorded response shapes, with no network |
+| `aiosqlite` | API tests on a throwaway SQLite file, so `make test` needs no running database |
+
+### Deliberately not used
+
+- **Broker SDKs** (`kiteconnect`, `fyers-apiv3`, `smartapi-python`, the Upstox and Groww SDKs). Adapters
+  call the REST APIs directly with `httpx`.
+  - *Async.* The SDKs are mostly synchronous (built on `requests`); calling them would block the event loop
+    or need a thread pool.
+  - *One retry and error model.* Five SDKs mean five different error types and hidden retry behaviours.
+    The one rule that matters most, never retry an order `POST` whose outcome is unknown, has to hold for
+    every broker, so it lives in one shared transport (`common/client.py`) that we control.
+  - *Testability and footprint.* Plain HTTP is mocked the same way for every broker, and five SDKs with
+    their transitive dependencies stay out of the image.
+
+  The cost is maintaining the request and response schemas ourselves. Pydantic schemas make a broker's
+  API change fail loudly; fields not confirmed against a live account are marked `UNVERIFIED`.
+- **Celery or Temporal.** One workflow type does not justify a workflow engine or a broker process; see
+  "State machine and audit log" and "Path to production".
+- **Alembic.** Deferred to production; see "Schema management".
+- **Redis.** Not needed with one process; it would be the distributed rate limiter at several replicas.
