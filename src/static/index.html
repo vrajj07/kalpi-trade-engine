@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalpi Trade Engine</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1b1f24; --muted: #5f6b7a; --border: #dde2e8;
+    --accent: #2457d6; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --code: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --card: #171b21; --text: #e6e9ee; --muted: #9aa5b3; --border: #2a313a;
+      --accent: #6d95ff; --ok: #3fb950; --warn: #d29922; --bad: #f85149; --code: #1f252d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 12px; display: flex; gap: 8px; align-items: center; }
+  .step { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+          background: var(--accent); color: #fff; font-size: 12px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  section { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+            padding: 16px; margin-bottom: 16px; }
+  section[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-bottom: 8px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  input, select, textarea, button { font: inherit; color: var(--text); }
+  input, select, textarea { background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+                            padding: 6px 8px; min-width: 0; }
+  textarea { width: 100%; min-height: 140px; font-family: ui-monospace, monospace; font-size: 13px; }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 7px 14px;
+           cursor: pointer; }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+  button:disabled { opacity: .5; cursor: default; }
+  .msg { font-size: 13px; margin: 8px 0 0; white-space: pre-wrap; }
+  .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; }
+  td.wrap { white-space: normal; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px;
+           background: var(--code); }
+  .badge.ok { color: var(--ok); } .badge.warn { color: var(--warn); } .badge.bad { color: var(--bad); }
+  .attention { border-left: 3px solid var(--warn); padding: 4px 10px; margin: 8px 0; }
+  .attention li { margin: 2px 0; }
+  code { background: var(--code); padding: 1px 4px; border-radius: 4px; font-size: 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button { background: transparent; color: var(--muted); border-radius: 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  details summary { cursor: pointer; color: var(--muted); margin-top: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kalpi Trade Engine</h1>
+  <p class="sub">Upload a target portfolio, connect a broker, execute, view results. A thin client over
+    <code>/api/v1</code>; see the <a href="../api/v1/docs">API docs</a>.</p>
+
+  <section>
+    <h2><span class="step">0</span>Who you are</h2>
+    <div class="row">
+      <label><span>User id (sent as <code>X-User-Id</code>; the API gateway sets it in production)</span>
+        <input id="user" value="demo-user" maxlength="64" size="24" autocomplete="off">
+      </label>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="step">1</span>Connect broker</h2>
+    <div class="row">
+      <label>Broker <select id="broker"></select></label>
+      <label>Access token (from the broker login)
+        <input id="token" type="password" value="mock-token" size="28" autocomplete="off">
+      </label>
+      <label>Client id (AngelOne only) <input id="clientId" size="12" autocomplete="off"></label>
+      <button id="connect">Connect</button>
+      <button id="refreshBrokers" class="secondary">Refresh</button>
+    </div>
+    <p id="connectMsg" class="msg"></p>
+    <details id="holdingsBox">
+      <summary>Current holdings at the broker</summary>
+      <div class="table-wrap" id="holdings"></div>
+    </details>
+  </section>
+
+  <section>
+    <h2><span class="step">2</span>Target portfolio</h2>
+    <div class="row">
+      <div class="seg" role="group" aria-label="Mode">
+        <button id="modeTarget" aria-pressed="true">First-time portfolio</button>
+        <button id="modeRebalance" aria-pressed="false">Rebalance</button>
+      </div>
+      <label>Upload CSV or JSON <input id="file" type="file" accept=".csv,.json,text/csv,application/json"></label>
+    </div>
+    <p id="formatHint" class="sub" style="margin:4px 0 8px"></p>
+    <textarea id="body" spellcheck="false"></textarea>
+    <p id="parseMsg" class="msg"></p>
+  </section>
+
+  <section>
+    <h2><span class="step">3</span>Execute</h2>
+    <div class="row">
+      <button id="execute">Execute</button>
+      <span class="sub" style="margin:0">Idempotency-Key: <code id="idemKey"></code></span>
+    </div>
+    <p id="execMsg" class="msg"></p>
+  </section>
+
+  <section id="results" aria-disabled="true">
+    <h2><span class="step">4</span>Results <span id="state" class="badge"></span></h2>
+    <p id="resultMeta" class="sub" style="margin:0 0 8px"></p>
+    <div id="attention"></div>
+    <div class="table-wrap" id="orders"></div>
+    <details>
+      <summary>Audit trail (every state change)</summary>
+      <div class="table-wrap" id="events"></div>
+    </details>
+  </section>
+</main>
+
+<script>
+"use strict";
+const API = "../api/v1";
+const $ = (id) => document.getElementById(id);
+const POLL_MS = 1000, POLL_MAX_MS = 5000;
+
+const SAMPLES = {
+  target: { hint: "CSV columns: symbol,quantity[,exchange]. Every stock becomes a BUY.",
+            body: [{ symbol: "INFY", quantity: 10 }, { symbol: "TCS", quantity: 5 }] },
+  instructions: { hint: "CSV columns: action,symbol,quantity[,exchange,price]. action is BUY, SELL or REBALANCE "
+                        + "(signed quantity, e.g. -4). A price makes it a LIMIT order.",
+                  body: [{ action: "SELL", symbol: "TCS", quantity: 5 },
+                         { action: "REBALANCE", symbol: "INFY", quantity: -4 },
+                         { action: "BUY", symbol: "HDFCBANK", quantity: 3 }] },
+};
+let mode = "target";
+
+// ---- HTTP -------------------------------------------------------------------------------------
+
+async function api(method, path, { body, headers = {} } = {}) {
+  const res = await fetch(API + path, {
+    method,
+    headers: { "X-User-Id": $("user").value.trim(), ...(body ? { "Content-Type": "application/json" } : {}), ...headers },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = res.status === 204 ? null : await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`${res.status}: ${errorText(data)}`);
+  return data;
+}
+
+function errorText(data) {
+  if (data?.error) return `${data.error.code}: ${data.error.message}`;
+  if (Array.isArray(data?.detail))  // FastAPI request validation
+    return data.detail.map((d) => `${d.loc.slice(1).join(".")}: ${d.msg}`).join("\n");
+  return JSON.stringify(data);
+}
+
+function say(el, text, kind = "") { el.textContent = text; el.className = `msg ${kind}`; }
+
+function esc(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+function table(rows, cols) {
+  if (!rows.length) return '<p class="sub">None.</p>';
+  const head = cols.map((c) => `<th>${esc(c.label)}</th>`).join("");
+  const body = rows.map((r) => "<tr>" + cols.map((c) =>
+    `<td class="${c.wrap ? "wrap" : ""}">${c.html ? c.html(r) : esc(r[c.key])}</td>`).join("") + "</tr>").join("");
+  return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+// ---- 1. Broker --------------------------------------------------------------------------------
+
+async function loadBrokers() {
+  try {
+    const brokers = await api("GET", "/brokers");
+    const current = $("broker").value || "mock";
+    $("broker").innerHTML = brokers.map((b) =>
+      `<option value="${esc(b.name)}">${esc(b.name)} (${esc(b.connection ?? "not connected")})</option>`).join("");
+    $("broker").value = brokers.some((b) => b.name === current) ? current : brokers[0].name;
+    const conn = brokers.find((b) => b.name === $("broker").value)?.connection;
+    say($("connectMsg"), conn ? `Connection: ${conn}` : "Not connected", conn === "ACTIVE" ? "ok" : "");
+    if (conn === "ACTIVE") loadHoldings();
+  } catch (e) { say($("connectMsg"), e.message, "bad"); }
+}
+
+async function connect() {
+  const broker = $("broker").value;
+  const body = { access_token: $("token").value };
+  if ($("clientId").value.trim()) body.client_id = $("clientId").value.trim();
+  try {
+    const conn = await api("PUT", `/brokers/${broker}/connection`, { body });
+    say($("connectMsg"), `Connected to ${conn.broker}: ${conn.status}`, "ok");
+    await loadBrokers();
+  } catch (e) { say($("connectMsg"), e.message, "bad"); }
+}
+
+async function loadHoldings() {
+  try {
+    const rows = await api("GET", `/brokers/${$("broker").value}/holdings`);
+    $("holdings").innerHTML = table(rows, [
+      { label: "Symbol", key: "symbol" }, { label: "Exchange", key: "exchange" },
+      { label: "Quantity", key: "quantity" }, { label: "Avg price", key: "average_price" }]);
+  } catch (e) { $("holdings").innerHTML = `<p class="msg bad">${esc(e.message)}</p>`; }
+}
+
+// ---- 2. Portfolio -----------------------------------------------------------------------------
+
+function setMode(m, { resetBody = true } = {}) {
+  mode = m;
+  $("modeTarget").setAttribute("aria-pressed", m === "target");
+  $("modeRebalance").setAttribute("aria-pressed", m === "instructions");
+  $("formatHint").textContent = SAMPLES[m].hint;
+  if (resetBody) $("body").value = JSON.stringify(SAMPLES[m].body, null, 2);
+  newIntent();
+}
+
+function parseCsv(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  if (lines.length < 2) throw new Error("CSV needs a header row and at least one data row");
+  const header = lines[0].toLowerCase().split(",").map((h) => h.trim());
+  const m = header.includes("action") ? "instructions" : "target";
+  for (const col of (m === "target" ? ["symbol", "quantity"] : ["action", "symbol", "quantity"]))
+    if (!header.includes(col)) throw new Error(`CSV header is missing "${col}"`);
+  const rows = lines.slice(1).map((line, i) => {
+    const cells = line.split(",").map((c) => c.trim());
+    const row = {};
+    header.forEach((h, j) => { if (cells[j]) row[h] = cells[j]; });
+    const qty = Number(row.quantity);
+    if (!Number.isInteger(qty)) throw new Error(`Row ${i + 2}: quantity "${row.quantity}" is not a whole number`);
+    const out = { symbol: row.symbol, quantity: qty };
+    if (row.exchange) out.exchange = row.exchange.toUpperCase();
+    if (m === "instructions") {
+      out.action = row.action.toUpperCase();
+      if (row.price) out.price = row.price;  // a string, so the API parses it as an exact Decimal
+    }
+    return out;
+  });
+  return { mode: m, rows };
+}
+
+function parseJson(text) {
+  const data = JSON.parse(text);
+  if (Array.isArray(data)) return { mode: data.some((r) => "action" in r) ? "instructions" : "target", rows: data };
+  if (data.target) return { mode: "target", rows: data.target };
+  if (data.instructions) return { mode: "instructions", rows: data.instructions };
+  throw new Error('JSON must be a list of rows, or an object with "target" or "instructions"');
+}
+
+async function onFile(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const { mode: m, rows } = file.name.toLowerCase().endsWith(".json") ? parseJson(text) : parseCsv(text);
+    setMode(m, { resetBody: false });
+    $("body").value = JSON.stringify(rows, null, 2);
+    say($("parseMsg"), `Loaded ${rows.length} row(s) from ${file.name} as ${m === "target" ? "a first-time portfolio" : "a rebalance"}.`, "ok");
+  } catch (e) { say($("parseMsg"), `Could not read ${file.name}: ${e.message}`, "bad"); }
+  ev.target.value = "";  // choosing the same file again fires change
+}
+
+// ---- 3. Execute -------------------------------------------------------------------------------
+
+// One key per execution intent. It is reused when a send fails with no response (the network may
+// have delivered it), so a retry resumes the same execution instead of trading twice. Editing the
+// portfolio or completing a run starts a new intent.
+let idempotencyKey;
+function newIntent() { idempotencyKey = crypto.randomUUID(); $("idemKey").textContent = idempotencyKey; }
+
+async function execute() {
+  let rows;
+  try { rows = JSON.parse($("body").value); if (!Array.isArray(rows)) throw new Error("expected a JSON list"); }
+  catch (e) { say($("execMsg"), `Portfolio is not valid JSON: ${e.message}`, "bad"); return; }
+
+  $("execute").disabled = true;
+  say($("execMsg"), "Submitting…");
+  try {
+    const report = await api("POST", "/executions", {
+      body: { broker: $("broker").value, [mode]: rows },
+      headers: { "Idempotency-Key": idempotencyKey },
+    });
+    say($("execMsg"), `Accepted (202). Execution ${report.id}`, "ok");
+    track(report.id);
+  } catch (e) {
+    const offline = e instanceof TypeError;  // fetch rejects with TypeError when no response arrived
+    say($("execMsg"), offline ? `${e.message}. Retrying sends the same Idempotency-Key.` : e.message, "bad");
+    $("execute").disabled = false;
+  }
+}
+
+// ---- 4. Results -------------------------------------------------------------------------------
+
+const STATE_CLASS = {
+  FILLED: "ok", COMPLETED: "ok",
+  PARTIALLY_FILLED: "warn", STILL_OPEN: "warn", UNCONFIRMED: "warn", SKIPPED: "warn", RUNNING: "warn",
+  PLACED: "warn", SUBMITTING: "warn", UNKNOWN: "warn", PENDING: "",
+  REJECTED: "bad", FAILED: "bad", CANCELLED: "bad", ABORTED: "bad", EXPIRED: "bad",
+};
+const badge = (s) => `<span class="badge ${STATE_CLASS[s] ?? ""}">${esc(s)}</span>`;
+let pollTimer;
+
+// Polling, not SSE: an execution runs for seconds to minutes and one person watches it, so a
+// request per second is cheap and needs no extra server machinery. Backs off while nothing changes.
+async function track(id, delay = POLL_MS, lastSeen = "") {
+  clearTimeout(pollTimer);
+  $("results").setAttribute("aria-disabled", "false");
+  let report;
+  try {
+    [report] = await Promise.all([api("GET", `/executions/${id}`), loadEvents(id)]);
+  } catch (e) {
+    $("resultMeta").textContent = `${e.message}; retrying`;
+    pollTimer = setTimeout(() => track(id, Math.min(delay * 2, POLL_MAX_MS), lastSeen), delay);
+    return;
+  }
+  render(report);
+  if (report.state === "RUNNING") {
+    const seen = JSON.stringify(report.orders.map((o) => [o.state, o.filled_quantity]));
+    const next = seen === lastSeen ? Math.min(delay * 2, POLL_MAX_MS) : POLL_MS;
+    pollTimer = setTimeout(() => track(id, next, seen), next);
+  } else {
+    $("execute").disabled = false;
+    newIntent();
+  }
+}
+
+function render(r) {
+  $("state").outerHTML = `<span id="state" class="badge ${STATE_CLASS[r.state] ?? ""}">${esc(r.state)}</span>`;
+  const summary = Object.entries(r.summary).map(([s, n]) => `${n} ${s}`).join(", ");
+  $("resultMeta").textContent = `${r.broker} · ${r.id} · ${summary}` + (r.reason ? ` · ${r.reason}` : "")
+    + (r.state === "RUNNING" ? " · polling…" : "");
+  $("attention").innerHTML = r.needs_attention.length
+    ? `<div class="attention"><strong>Needs attention</strong><ul>${r.needs_attention.map((a) => `<li>${esc(a)}</li>`).join("")}</ul></div>`
+    : "";
+  $("orders").innerHTML = table(r.orders, [
+    { label: "#", key: "position" }, { label: "Phase", key: "phase" }, { label: "Action", key: "action" },
+    { label: "Side", key: "side" }, { label: "Symbol", key: "symbol" }, { label: "Exch", key: "exchange" },
+    { label: "Qty", key: "quantity" }, { label: "Filled", key: "filled_quantity" },
+    { label: "Avg price", key: "average_price" }, { label: "State", html: (o) => badge(o.state) },
+    { label: "Broker order", key: "broker_order_id" }, { label: "Message", key: "message", wrap: true }]);
+}
+
+async function loadEvents(id) {
+  const events = await api("GET", `/executions/${id}/events`);
+  $("events").innerHTML = table(events, [
+    { label: "Time", html: (e) => esc(new Date(e.created_at).toLocaleTimeString()) },
+    { label: "Order", html: (e) => esc(e.order_id ?? "execution") },
+    { label: "From", key: "from_state" }, { label: "To", html: (e) => badge(e.to_state) },
+    { label: "Message", key: "message", wrap: true }]);
+}
+
+// ---- wiring -----------------------------------------------------------------------------------
+
+$("connect").onclick = connect;
+$("refreshBrokers").onclick = loadBrokers;
+$("broker").onchange = loadBrokers;
+$("holdingsBox").ontoggle = () => $("holdingsBox").open && loadHoldings();
+$("modeTarget").onclick = () => setMode("target");
+$("modeRebalance").onclick = () => setMode("instructions");
+$("file").onchange = onFile;
+$("body").oninput = newIntent;
+$("user").onchange = loadBrokers;
+$("execute").onclick = execute;
+setMode("target");
+loadBrokers();
+</script>
+</body>
+</html>

@@ -3,8 +3,10 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from src.api import router as api_router
 from src.core.config import settings
@@ -15,6 +17,8 @@ from src.core.logger import configure_logging
 from src.middlewares.error_handler import add_error_handlers
 
 logger = logging.getLogger(__name__)
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -40,6 +44,8 @@ def create_app() -> FastAPI:
     )
     add_error_handlers(app)
     app.include_router(api_router, prefix=settings.api_prefix)
+    # Demo UI: a static page on the same origin, so no CORS. It calls the API like any other client.
+    app.mount("/ui", StaticFiles(directory=STATIC_DIR, html=True), name="ui")
     return app
 
 

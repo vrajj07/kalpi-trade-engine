@@ -25,6 +25,17 @@ make down
 **API docs (Swagger UI):** http://localhost:8000/api/v1/docs, available while the local server is running
 (`make up` or `make run`). Click **Authorize** and enter any user id to send `X-User-Id` on every call.
 
+**Demo UI:** http://localhost:8000/ui/ walks the whole flow: connect a broker (the mock accepts any token),
+upload a target portfolio (`docs/sample_target.csv`, or `docs/sample_rebalance.csv` for a rebalance), click
+**Execute**, and watch the report and audit trail update. It is one static HTML file (`src/static/index.html`)
+served by FastAPI on the same origin, so there is no build step and no CORS. It is a client of the public API
+and nothing more:
+- **Polling, not SSE:** an execution lasts seconds to minutes and one person watches it, so `GET` once a
+  second (backing off while nothing changes) is cheap and needs no server push.
+- **One `Idempotency-Key` per intent:** a retry after a network failure reuses the key, so it resumes the same
+  execution instead of trading twice. Editing the portfolio or finishing a run starts a new key.
+- **User id field:** stands in for the API gateway that sets `X-User-Id` in production.
+
 Try every endpoint:
 - **Postman:** import `docs/kalpi.postman_collection.json` and `docs/kalpi.postman_environment.json`, select
   the `kalpi` environment, and run the collection (every request has tests). The mock broker needs

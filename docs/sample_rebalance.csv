@@ -1,0 +1,4 @@
+action,symbol,quantity,exchange,price
+SELL,TCS,5,NSE,
+REBALANCE,INFY,-4,NSE,
+BUY,HDFCBANK,3,NSE,1650.50
