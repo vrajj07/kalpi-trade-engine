@@ -56,7 +56,7 @@ class AngelOneClient(BaseBrokerClient):
     def check_body(self, response: httpx.Response, body: Any) -> None:
         # Angel reports most failures as HTTP 200 with {"status": false, "errorcode": "AB...."}.
         error = self.try_parse(AngelError, body)
-        if error is not None and error.status is False:
+        if error is not None and error.failed:
             raise self.error_from_body(response, body) or BrokerRequestError(error.message, broker=self.broker)
 
     def error_from_body(self, response: httpx.Response, body: Any) -> BrokerError | None:

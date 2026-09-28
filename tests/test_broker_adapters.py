@@ -12,6 +12,7 @@ from src.integrations.brokers.errors import (
     BrokerAuthError,
     BrokerRateLimitError,
     BrokerRequestError,
+    BrokerResponseError,
     InstrumentNotFoundError,
     OrderRejectedError,
     OrderStateUnknownError,
@@ -120,6 +121,25 @@ async def test_angelone_rejection_inside_http_200():
     async with AngelOneBroker(CREDS, instruments=ANGEL_INSTRUMENTS) as broker:
         with pytest.raises(OrderRejectedError):
             await broker.place_order(SELL_LIMIT)
+
+
+@respx.mock
+async def test_angelone_token_failure_envelope_is_an_auth_error():
+    # Token failures use a different envelope: "success" and camelCase "errorCode".
+    respx.get(url__regex=r".*/getHolding").respond(
+        json={"success": False, "message": "Invalid Token", "errorCode": "AG8001", "data": ""})
+    async with AngelOneBroker(CREDS, instruments=ANGEL_INSTRUMENTS) as broker:
+        with pytest.raises(BrokerAuthError):
+            await broker.get_holdings()
+
+
+@respx.mock
+async def test_unexpected_response_shape_keeps_validation_details_out_of_the_message():
+    respx.get(url__regex=r".*/getHolding").respond(json={"status": True, "data": "not-a-list"})
+    async with AngelOneBroker(CREDS, instruments=ANGEL_INSTRUMENTS) as broker:
+        with pytest.raises(BrokerResponseError) as exc:
+            await broker.get_holdings()
+    assert exc.value.message == "Unexpected response from angelone"
 
 
 @respx.mock

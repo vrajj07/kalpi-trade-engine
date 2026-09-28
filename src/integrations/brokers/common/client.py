@@ -4,6 +4,7 @@ Each broker's client.py subclasses BaseBrokerClient and adds its endpoints, auth
 and error-envelope parsing. Nothing here knows about orders or domain types.
 """
 import hashlib
+import logging
 from typing import Any, ClassVar, TypeVar
 
 import httpx
@@ -21,6 +22,8 @@ from ..errors import (
     BrokerUnavailableError,
     OrderStateUnknownError,
 )
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -122,8 +125,10 @@ class BaseBrokerClient:
         try:
             return TypeAdapter(schema).validate_python(data)
         except ValidationError as exc:
+            # The details (field paths, the broker's raw body) are for our logs, not for API clients.
+            logger.warning("Unexpected response shape from %s: %s", self.broker, exc)
             error = OrderStateUnknownError if after_write else BrokerResponseError
-            raise error(f"Unexpected response shape: {exc}", broker=self.broker) from exc
+            raise error(f"Unexpected response from {self.broker}", broker=self.broker) from exc
 
     @staticmethod
     def try_parse(schema: type[T], data: Any) -> T | None:
