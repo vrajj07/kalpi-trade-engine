@@ -372,6 +372,18 @@ It generalises when a second workflow appears (for example scheduled SIP buys):
 
 The final report goes to `NOTIFICATION_WEBHOOK_URL` if it is set; otherwise it is logged.
 
+To see the webhook deliveries:
+1. Open https://webhook.site and copy your unique URL.
+2. Set `NOTIFICATION_WEBHOOK_URL=<that URL>` in `.env`, then `make up` to restart the stack.
+3. Run an execution (e.g. from the demo UI). The report arrives as a `POST` with the JSON body and the
+   `X-Delivery-Id` header. Anyone with the URL can read it, so use it for mock data only.
+
+Without a URL, the report is written to the API log (`docker compose logs -f api | grep notifiers`). Either
+way, delivery state is in the outbox (`make db-shell`):
+`select execution_id, status, attempts, last_error from notification_outbox order by created_at desc;`
+A local receiver must be addressed as `host.docker.internal` from the container (on Linux, add
+`extra_hosts: ["host.docker.internal:host-gateway"]` to the `api` service), since `localhost` is the container.
+
 ```
 final transition ─► commit state + audit event + outbox row (one transaction)
                                                    │
