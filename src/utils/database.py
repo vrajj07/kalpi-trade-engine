@@ -51,6 +51,15 @@ class DatabaseService:
         await self._write()
         return instance
 
+    async def delete(self, instance: T) -> None:
+        await self.db.delete(instance)
+        await self._write()
+
+    async def refresh(self, instance: T) -> T:
+        """Reload server-generated values (e.g. an onupdate timestamp) that a write expired."""
+        await self.db.refresh(instance)
+        return instance
+
     async def commit(self) -> None:
         await self.db.commit()
 

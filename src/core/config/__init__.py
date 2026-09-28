@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # SecretStr: the URL embeds the DB password, so keep it out of reprs and logs.
     database_url: SecretStr = SecretStr("postgresql+psycopg://kalpi:kalpi@localhost:5433/kalpi")
 
+    # Fernet keys that encrypt stored broker access tokens, comma-separated, newest first.
+    # The first encrypts; all decrypt, so a key can be rotated without re-connecting everyone.
+    # Generate one: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    token_encryption_keys: SecretStr | None = None
+
     # Empty: execution reports are logged to the console instead.
     notification_webhook_url: str | None = None
 

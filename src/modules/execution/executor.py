@@ -34,7 +34,7 @@ from src.integrations.brokers.errors import (
 )
 from src.models import Execution, ExecutionOrder
 
-from src.models.enums import ExecutionState, OrderState, Phase
+from src.models.execution.enums import ExecutionState, OrderState, Phase
 from .transitions import transition_execution, transition_order
 
 logger = logging.getLogger(__name__)

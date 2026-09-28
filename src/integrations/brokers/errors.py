@@ -20,10 +20,6 @@ class BrokerAuthError(BrokerError):
     """Access token missing, invalid or expired. The user must log in again."""
 
 
-class BrokerNotConfiguredError(BrokerError):
-    """No credentials configured for this broker (see src/core/config/<broker>.py)."""
-
-
 class BrokerRateLimitError(BrokerError):
     retryable = True
 

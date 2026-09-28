@@ -17,10 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.dao.execution import ExecutionDAO
-from src.integrations.brokers.errors import BrokerError
 from src.integrations.brokers.registry import get_adapter
 from src.models import Execution
-from src.models.enums import ExecutionState
+from src.models.execution.enums import ExecutionState
+from src.modules.broker import BrokerModule
+from src.modules.broker.exceptions import BrokerModuleError
 from src.modules.execution.executor import Executor
 from src.modules.execution.helpers import lifecycle, runner
 from src.modules.execution.helpers.idempotency import request_hash
@@ -37,19 +38,21 @@ class ExecutionModule:
 
     def __init__(self, db: AsyncSession) -> None:
         self.dao = ExecutionDAO(db)
+        self.broker_module = BrokerModule(db)
 
     @staticmethod
     def fingerprint(request: ExecutionCreate) -> str:
         return request_hash(request)
 
-    async def create(self, idempotency_key: str, request: ExecutionCreate,
+    async def create(self, user_id: str, idempotency_key: str, request: ExecutionCreate,
                      fingerprint: str) -> tuple[Execution, bool]:
         """Plans the orders and persists the whole plan before any order is sent (write-ahead).
 
         Returns (execution, created). created is False when a concurrent request with the same
         key won the insert: its execution is returned instead.
         """
-        execution = Execution(id=uuid.uuid4(), idempotency_key=idempotency_key, request_hash=fingerprint,
+        execution = Execution(id=uuid.uuid4(), user_id=user_id, idempotency_key=idempotency_key,
+                              request_hash=fingerprint,
                               broker=request.broker, state=ExecutionState.RUNNING,
                               expires_at=lifecycle.next_market_close(datetime.now(UTC)))
         execution.orders = plan(execution.id, instructions_for(request))
@@ -57,7 +60,7 @@ class ExecutionModule:
             await self.dao.create(execution)
         except IntegrityError:
             await self.dao.rollback()
-            if (winner := await self.dao.get_by_idempotency_key(idempotency_key)) is None:
+            if (winner := await self.dao.get_by_idempotency_key(user_id, idempotency_key)) is None:
                 raise
             return winner, False
         return execution, True
@@ -75,13 +78,17 @@ class ExecutionModule:
         runner.start(execution_id, lambda session: ExecutionModule(session).run(execution_id))
 
     async def run(self, execution_id: uuid.UUID) -> None:
-        """Background run: drives the execution to a final state, then sends the report."""
+        """Background run: drives the execution to a final state, then sends the report.
+
+        The user's session is loaded from their stored connection here, not passed in, so a
+        resumed run (or a queue worker) needs nothing from the original request."""
         if (execution := await self.dao.get_by_id(execution_id)) is None:
             return
         try:
-            adapter = get_adapter(execution.broker)
-        except BrokerError as exc:
-            lifecycle.stop(execution, ExecutionState.ABORTED, exc.message, "Not sent, broker not available")
+            adapter = get_adapter(execution.broker,
+                                  await self.broker_module.credentials(execution.user_id, execution.broker))
+        except BrokerModuleError as exc:
+            lifecycle.stop(execution, ExecutionState.ABORTED, exc.message, "Not sent, broker not connected")
             await self.dao.save()
         else:
             try:
@@ -92,6 +99,8 @@ class ExecutionModule:
                 # Left RUNNING on purpose: resubmitting with the same key resumes it safely.
                 logger.exception("Execution %s interrupted; resubmit with the same Idempotency-Key", execution_id)
                 return
+            if execution.state is ExecutionState.ABORTED:  # the executor aborts only on a rejected session
+                await self.broker_module.mark_expired(execution.user_id, execution.broker)
         await get_notifier().notify(ExecutionReport.model_validate(execution))
 
 

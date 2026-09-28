@@ -9,12 +9,10 @@ def env_config(prefix: str) -> SettingsConfigDict:
 
 
 class BrokerConfig(BaseSettings):
-    """Access tokens are short-lived (most brokers expire them daily). Obtaining them through
-    each broker's login flow is out of scope, so they are supplied here and rotated out of band.
-    One set per broker means one trading account per deployment; a multi-user system would
-    keep per-user tokens in a secrets store instead.
+    """App-level settings only: they identify Kalpi's registered app to the broker.
+
+    User-level credentials (access token, client code) are never read from the environment:
+    each user connects their own account, stored encrypted in broker_connections.
     """
 
     api_key: SecretStr | None = None
-    access_token: SecretStr | None = None
-    client_id: str | None = None

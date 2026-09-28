@@ -20,8 +20,8 @@ venv: $(VENV) ## Create the virtualenv
 install: $(VENV) ## Install app + dev dependencies
 	$(PIP) install -r requirements-dev.txt
 
-env: ## Create .env from .env.example (won't overwrite)
-	@test -f .env || cp .env.example .env
+env: ## Create .env from .env.example and generate an encryption key (won't overwrite)
+	@python3 scripts/init_env.py
 
 run: env ## Run the API locally with auto-reload (start the DB first: make db-up)
 	$(PYTHON) -m uvicorn src.main:app --reload --port 8000

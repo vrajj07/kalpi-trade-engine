@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.dependencies import UserId
 from src.core.database import get_db
 from src.schemas.execution import ExecutionCreate, ExecutionEventReport, ExecutionReport
 from src.service.execution import ExecutionService
@@ -19,6 +20,7 @@ def get_execution_service(session: AsyncSession = Depends(get_db)) -> ExecutionS
 @router.post("", status_code=status.HTTP_202_ACCEPTED, response_model=ExecutionReport)
 async def submit_execution(
     body: ExecutionCreate,
+    user_id: UserId,
     request: Request,
     response: Response,
     idempotency_key: Annotated[str, Header(min_length=8, max_length=255, description=(
@@ -30,7 +32,7 @@ async def submit_execution(
 
     Poll `GET /executions/{id}` for progress; the final report is also sent to the notifier.
     """
-    execution, replayed = await service.submit(idempotency_key, body)
+    execution, replayed = await service.submit(user_id, idempotency_key, body)
     response.headers["Location"] = str(request.url_for("get_execution", execution_id=execution.id))
     if replayed:
         response.headers["Idempotent-Replayed"] = "true"
@@ -39,14 +41,14 @@ async def submit_execution(
 
 @router.get("/{execution_id}", response_model=ExecutionReport)
 async def get_execution(
-    execution_id: uuid.UUID, service: ExecutionService = Depends(get_execution_service),
+    execution_id: uuid.UUID, user_id: UserId, service: ExecutionService = Depends(get_execution_service),
 ) -> ExecutionReport:
-    return ExecutionReport.model_validate(await service.get(execution_id))
+    return ExecutionReport.model_validate(await service.get(user_id, execution_id))
 
 
 @router.get("/{execution_id}/events", response_model=list[ExecutionEventReport])
 async def list_execution_events(
-    execution_id: uuid.UUID, service: ExecutionService = Depends(get_execution_service),
+    execution_id: uuid.UUID, user_id: UserId, service: ExecutionService = Depends(get_execution_service),
 ) -> list[ExecutionEventReport]:
     """Audit trail: every state change of the execution and its orders, oldest first."""
-    return [ExecutionEventReport.model_validate(e) for e in await service.list_events(execution_id)]
+    return [ExecutionEventReport.model_validate(e) for e in await service.list_events(user_id, execution_id)]

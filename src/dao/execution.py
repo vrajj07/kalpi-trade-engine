@@ -14,8 +14,9 @@ class ExecutionDAO:
     async def get_by_id(self, execution_id: uuid.UUID) -> Execution | None:
         return await self.db_service.get_by_id(Execution, execution_id)
 
-    async def get_by_idempotency_key(self, key: str) -> Execution | None:
-        return await self.db_service.get_by_field(Execution, "idempotency_key", key)
+    async def get_by_idempotency_key(self, user_id: str, key: str) -> Execution | None:
+        rows = await self.db_service.filter(Execution, user_id=user_id, idempotency_key=key, limit=1)
+        return rows[0] if rows else None
 
     async def list_events(self, execution_id: uuid.UUID) -> list[ExecutionEvent]:
         return await self.db_service.filter(ExecutionEvent, execution_id=execution_id, order_by=ExecutionEvent.id)

@@ -60,6 +60,51 @@ and no migration files to keep in sync.
 (`alembic revision --autogenerate`), run `alembic upgrade head` as a one-off job before rollout,
 and remove `init_db()` from the startup lifespan.
 
+## Broker connections and authentication
+
+**Flow:** the user logs in to their broker in the Kalpi app, then the app stores the resulting session:
+
+```bash
+curl -X PUT localhost:8000/api/v1/brokers/mock/connection -H "X-User-Id: demo-user" \
+  -H "Content-Type: application/json" -d '{"access_token": "<token from the broker login>"}'
+# optional: "client_id" (AngelOne client code), "expires_at" (when the broker expires the token)
+```
+
+Executions then need no token: the engine loads the stored session itself. That includes a resumed run
+or a future queue worker. `GET` on the connection shows its status, and `DELETE` disconnects it.
+`GET /brokers` lists every broker with the user's connection status.
+
+- **Who the user is.** Every request carries `X-User-Id`, set by the upstream API gateway after it has
+  authenticated the user. This is an internal service that trusts that header, so it must never be
+  exposed publicly. Everything is scoped by it:
+  - connections are keyed by `(user_id, broker)`
+  - Idempotency-Keys are unique per user, so one user's key never replays another user's execution
+  - another user's execution returns `404`, not `403`, so the API does not reveal that it exists
+    (no IDOR, no existence oracle)
+- **Tokens are encrypted at rest.** Fernet (AES + HMAC, from `cryptography`), keyed by
+  `TOKEN_ENCRYPTION_KEYS`. `make env` generates the key.
+  - Several comma-separated keys can be set, newest first: the first encrypts and any of them decrypts,
+    so a key can be rotated without reconnecting everyone.
+  - Tokens are never returned by the API or logged (`SecretStr`).
+  - *Trust boundary:* this protects a leaked database, backup or replica. It does not protect against
+    anyone who can read the app's environment, where the key lives. In production the key would come
+    from a KMS or secrets manager (envelope encryption).
+- **Only the user's session is per user.** App-level settings stay in the environment, because they
+  identify Kalpi's app to the broker: `ZERODHA_API_KEY`, the Fyers app id, AngelOne's machine headers.
+  A deployment-wide access token is deliberately not supported: any `X-User-Id` would trade on that
+  one account.
+- **Expiry.** Most brokers expire tokens daily, so a connection is typically refreshed once per trading
+  day.
+  - A `401` from the broker marks the connection `EXPIRED`, whether it comes from the holdings read or
+    mid-run (the run aborts and asks the user to log in again).
+  - A known `expires_at` expires it early, lazily on the next read, so an execution is rejected before
+    any order is sent.
+  - Reconnecting reactivates the connection.
+- **Out of scope: each broker's login flow.** Examples: Zerodha's login URL, then `request_token`, then a
+  checksum exchange for `access_token`; Fyers' `auth_code`; AngelOne's TOTP; Upstox and Groww OAuth.
+  These are browser redirects owned by the Kalpi app and each broker's developer console. This service
+  starts where they end, with a valid session.
+
 ## Rebalance logic
 
 ### Request
@@ -70,7 +115,7 @@ A request is **exactly one** of two modes.
 nothing yet, and every stock becomes a `BUY`.
 
 ```bash
-curl -X POST localhost:8000/api/v1/executions \
+curl -X POST localhost:8000/api/v1/executions -H "X-User-Id: demo-user" \
   -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" \
   -d '{"broker": "mock", "target": [
         {"symbol": "INFY", "quantity": 5},
@@ -81,7 +126,7 @@ curl -X POST localhost:8000/api/v1/executions \
 payload says what to do with each stock.
 
 ```bash
-curl -X POST localhost:8000/api/v1/executions \
+curl -X POST localhost:8000/api/v1/executions -H "X-User-Id: demo-user" \
   -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" \
   -d '{"broker": "mock", "instructions": [
         {"action": "SELL",      "symbol": "INFY",  "quantity": 10},

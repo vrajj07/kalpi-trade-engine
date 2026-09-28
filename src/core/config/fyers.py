@@ -1,4 +1,4 @@
-"""Fyers credentials. Env: FYERS_API_KEY (the app id, e.g. XXXX-100), FYERS_ACCESS_TOKEN."""
+"""Fyers app settings. Env: FYERS_API_KEY (the app id, e.g. XXXX-100)."""
 from .base import BrokerConfig, env_config
 
 

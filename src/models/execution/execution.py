@@ -7,24 +7,28 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import DateTime, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, WriteOnlyMapped, mapped_column, relationship
 
 from src.core.database import Base
 from src.integrations.brokers.enums import BrokerName
 from src.models.columns import enum_column
-from src.models.enums import ExecutionState
+from src.models.execution.enums import ExecutionState
 
 if TYPE_CHECKING:
-    from src.models.execution_event import ExecutionEvent
-    from src.models.execution_order import ExecutionOrder
+    from src.models.execution.event import ExecutionEvent
+    from src.models.execution.order import ExecutionOrder
 
 
 class Execution(Base):
     __tablename__ = "executions"
+    # Idempotency keys are scoped per user (as Stripe scopes them per account): one user's key
+    # must never collide with, or replay, another user's execution.
+    __table_args__ = (UniqueConstraint("user_id", "idempotency_key"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    idempotency_key: Mapped[str] = mapped_column(String(255), unique=True)
+    user_id: Mapped[str] = mapped_column(String(64))
+    idempotency_key: Mapped[str] = mapped_column(String(255))
     request_hash: Mapped[str] = mapped_column(String(64))
     broker: Mapped[BrokerName] = mapped_column(enum_column(BrokerName))
     state: Mapped[ExecutionState] = mapped_column(enum_column(ExecutionState), default=ExecutionState.RUNNING)

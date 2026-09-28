@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from src.core.config import settings
 from src.models import Execution
-from src.models.enums import ExecutionState, OrderState
+from src.models.execution.enums import ExecutionState, OrderState
 from src.modules.execution.transitions import transition_execution, transition_order
 
 IST = timezone(timedelta(hours=5, minutes=30))  # no DST, so a fixed offset is exact

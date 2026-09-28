@@ -1,7 +1,7 @@
 import pytest
 
 from src.models import ExecutionOrder
-from src.models.enums import OrderState
+from src.models.execution.enums import OrderState
 from src.modules.execution.exceptions import IllegalTransitionError
 from src.modules.execution.transitions import ORDER_TRANSITIONS, transition_order
 

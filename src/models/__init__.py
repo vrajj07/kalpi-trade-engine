@@ -1,7 +1,9 @@
-"""SQLAlchemy ORM models. Subclass src.core.database.Base and import each model here
-so it is registered before create_all() runs."""
-from .execution import Execution
-from .execution_event import ExecutionEvent
-from .execution_order import ExecutionOrder
+"""SQLAlchemy ORM models, one package per module, each with its own enums.py.
 
-__all__ = ["Execution", "ExecutionEvent", "ExecutionOrder"]
+Every model is re-exported here, so importing `src.models` registers them all before
+create_all() runs.
+"""
+from .broker import BrokerConnection
+from .execution import Execution, ExecutionEvent, ExecutionOrder
+
+__all__ = ["BrokerConnection", "Execution", "ExecutionEvent", "ExecutionOrder"]

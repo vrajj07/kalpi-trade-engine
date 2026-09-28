@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 from src.models import Execution, ExecutionEvent, ExecutionOrder
 
-from src.models.enums import ExecutionState, OrderState
+from src.models.execution.enums import ExecutionState, OrderState
 from .exceptions import IllegalTransitionError
 
 logger = logging.getLogger(__name__)

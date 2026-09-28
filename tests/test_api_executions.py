@@ -12,10 +12,12 @@ from src.integrations.brokers.errors import BrokerAuthError, BrokerUnavailableEr
 from src.integrations.brokers.mock import MockBroker
 from src.core.config.mock import MockConfig
 from src.main import app
+from src.modules.execution.helpers import runner
 from src.modules.notification.base import WebhookNotifier
 from src.schemas.execution import ExecutionReport
 
 URL = f"{settings.api_prefix}/executions"
+BROKERS = f"{settings.api_prefix}/brokers"
 REBALANCE = {"broker": "mock", "instructions": [
     {"action": "SELL", "symbol": "INFY", "quantity": 10},
     {"action": "REBALANCE", "symbol": "TCS", "quantity": 2},
@@ -26,8 +28,15 @@ REBALANCE = {"broker": "mock", "instructions": [
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(registry, "mock_config", MockConfig(holdings={"INFY": 10, "TCS": 5}))
-    with TestClient(app) as c:  # runs the lifespan: creates tables
+    # A fresh user per test (the SQLite file is shared), connected to the mock broker.
+    with TestClient(app, headers={"X-User-Id": f"user-{uuid.uuid4().hex[:8]}"}) as c:  # lifespan: creates tables
+        assert c.put(f"{BROKERS}/mock/connection", json={"access_token": "mock-token"}).status_code == 200
         yield c
+        # Let background runs finish rather than be cancelled mid-write at shutdown: SQLite has one
+        # file-wide write lock, and a cancelled writer can hold it into the next test.
+        deadline = time.monotonic() + 5
+        while runner._tasks and time.monotonic() < deadline:
+            time.sleep(0.01)
 
 
 def submit(client, body=REBALANCE, key=None):
@@ -112,6 +121,8 @@ def test_holdings_read_failure_fails_closed(client, monkeypatch, error, status):
     response = submit(client)
     assert response.status_code == status
     assert "id" not in response.json()  # nothing was persisted or placed
+    connection = client.get(f"{BROKERS}/mock/connection").json()["status"]
+    assert connection == ("EXPIRED" if status == 401 else "ACTIVE")  # a rejected session is not reused
 
 
 def test_same_key_same_body_replays_without_trading_again(client):
@@ -134,16 +145,51 @@ def test_missing_idempotency_key_is_rejected(client):
     assert client.post(URL, json=REBALANCE).status_code == 422
 
 
-def test_unconfigured_broker_is_rejected_before_anything_is_stored(client):
+def test_execution_needs_a_connected_broker(client):
     response = submit(client, {**REBALANCE, "broker": "zerodha"})
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == "UnconfiguredBrokerError"
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "BrokerNotConnectedError"
 
 
-def test_brokers_endpoint_lists_all_five_plus_mock(client):
-    brokers = {b["name"]: b["configured"] for b in client.get(f"{settings.api_prefix}/brokers").json()}
+def test_brokers_endpoint_lists_all_five_plus_mock_with_connection(client):
+    brokers = {b["name"]: b["connection"] for b in client.get(BROKERS).json()}
     assert set(brokers) == {"zerodha", "fyers", "angelone", "upstox", "groww", "mock"}
-    assert brokers["mock"] is True
+    assert (brokers["mock"], brokers["zerodha"]) == ("ACTIVE", None)
+
+
+def test_connection_never_returns_the_token_and_can_be_removed(client):
+    status = client.put(f"{BROKERS}/zerodha/connection", json={"access_token": "kite-secret"}).json()
+    assert status["status"] == "ACTIVE" and "kite-secret" not in str(status)
+    assert client.delete(f"{BROKERS}/zerodha/connection").status_code == 204
+    assert client.get(f"{BROKERS}/zerodha/connection").status_code == 409
+
+
+def test_token_past_its_expiry_is_rejected_before_trading(client):
+    client.put(f"{BROKERS}/mock/connection", json={"access_token": "t", "expires_at": "2020-01-01T00:00:00Z"})
+    response = submit(client)
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "BrokerConnectionExpiredError"
+    assert client.get(f"{BROKERS}/mock/connection").json()["status"] == "EXPIRED"
+    # Reconnecting with a fresh token reactivates it.
+    client.put(f"{BROKERS}/mock/connection", json={"access_token": "fresh"})
+    assert submit(client).status_code == 202
+
+
+def test_users_are_isolated(client):
+    key = uuid.uuid4().hex
+    mine = submit(client, key=key).json()["id"]
+    other = {"X-User-Id": "someone-else"}
+    assert client.get(f"{URL}/{mine}", headers=other).status_code == 404  # no reading others' executions
+    assert client.get(f"{URL}/{mine}/events", headers=other).status_code == 404
+    # The same Idempotency-Key from another user is their own key, not a replay of mine.
+    client.put(f"{BROKERS}/mock/connection", json={"access_token": "t2"}, headers=other)
+    theirs = client.post(URL, json=REBALANCE, headers={**other, "Idempotency-Key": key})
+    assert theirs.status_code == 202 and theirs.json()["id"] != mine
+    wait_finished(client, mine)
+
+
+def test_missing_user_is_rejected(client):
+    assert client.get(BROKERS, headers={"X-User-Id": ""}).status_code == 422
 
 
 @respx.mock

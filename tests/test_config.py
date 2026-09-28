@@ -1,48 +1,42 @@
-import pytest
+from pydantic import SecretStr
 
 from src.core.config import settings
 from src.core.config.angelone import AngelOneConfig
 from src.core.config.mock import MockConfig
-from src.core.config.upstox import UpstoxConfig
 from src.core.config.zerodha import ZerodhaConfig
 from src.integrations.brokers import registry
 from src.integrations.brokers.angelone import AngelOneBroker
 from src.integrations.brokers.enums import BrokerName
-from src.integrations.brokers.errors import BrokerNotConfiguredError
 from src.integrations.brokers.mock import MockBroker
-from src.integrations.brokers.registry import get_adapter
+from src.integrations.brokers.registry import credentials_for, get_adapter
 
 
-def test_broker_config_reads_its_env_prefix(monkeypatch):
+def test_broker_config_holds_app_settings_only(monkeypatch):
     monkeypatch.setenv("ZERODHA_API_KEY", "kite-key")
-    monkeypatch.setenv("ZERODHA_ACCESS_TOKEN", "kite-token")
+    monkeypatch.setenv("ZERODHA_ACCESS_TOKEN", "must-be-ignored")  # user tokens never come from env
     conf = ZerodhaConfig()
-    assert conf.access_token.get_secret_value() == "kite-token"
-    assert "kite-token" not in repr(conf) and "kite-key" not in repr(conf)
+    assert conf.api_key.get_secret_value() == "kite-key"
+    assert not hasattr(conf, "access_token")
+    assert "kite-key" not in repr(conf)
 
 
-def test_empty_env_value_means_not_configured(monkeypatch):
-    # .env.example ships blank values; a blank token must not count as configured.
-    monkeypatch.setenv("UPSTOX_ACCESS_TOKEN", "")
-    monkeypatch.setitem(registry._CONFIGS, BrokerName.UPSTOX, UpstoxConfig())
-    with pytest.raises(BrokerNotConfiguredError, match="UPSTOX_ACCESS_TOKEN"):
-        get_adapter("upstox")
-
-
-def test_registry_builds_credentials_from_config(monkeypatch):
+def test_credentials_combine_app_settings_with_the_users_session(monkeypatch):
     monkeypatch.setitem(registry._CONFIGS, BrokerName.ANGELONE, AngelOneConfig(
-        api_key="angel-key", access_token="jwt", client_public_ip="1.2.3.4"))
-    adapter = get_adapter("angelone")
+        api_key="angel-key", client_public_ip="1.2.3.4"))
+    adapter = get_adapter("angelone", credentials_for(BrokerName.ANGELONE, SecretStr("jwt"), client_id="A123"))
     assert isinstance(adapter, AngelOneBroker)
     headers = adapter.client.headers()
     assert (headers["X-PrivateKey"], headers["Authorization"], headers["X-ClientPublicIP"]) == \
         ("angel-key", "Bearer jwt", "1.2.3.4")
 
 
-def test_mock_needs_no_credentials(monkeypatch):
+def test_mock_credentials_carry_the_demo_behaviour(monkeypatch):
     monkeypatch.setattr(registry, "mock_config", MockConfig(holdings={"INFY": 3}))
-    assert isinstance(get_adapter("mock"), MockBroker)
+    creds = credentials_for(BrokerName.MOCK, SecretStr("any"))
+    assert isinstance(get_adapter("mock", creds), MockBroker)
+    assert creds.extra["holdings"] == {"INFY": 3}
 
 
-def test_database_url_is_secret():
+def test_secrets_are_hidden_from_reprs():
     assert "kalpi:kalpi" not in repr(settings)
+    assert "dGVzdC" not in repr(settings)  # the encryption keys

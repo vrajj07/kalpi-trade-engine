@@ -6,7 +6,7 @@ from src.integrations.brokers.enums import OrderType, Side
 from src.models import ExecutionOrder
 from src.schemas.execution import ExecutionCreate, Instruction
 
-from src.models.enums import Action, OrderState, Phase
+from src.models.execution.enums import Action, OrderState, Phase
 
 
 def order_tag(execution_id: uuid.UUID, position: int) -> str:

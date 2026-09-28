@@ -7,7 +7,6 @@ from src.integrations.brokers.base import Holding
 from src.modules.execution.exceptions import (
     InvalidInstructionsError,
     PortfolioNotEmptyError,
-    UnconfiguredBrokerError,
 )
 from src.modules.execution.validators import ExecutionValidator
 from src.schemas.execution import ExecutionCreate
@@ -34,11 +33,6 @@ def test_every_instruction_error_is_reported_at_once():
         ExecutionValidator().validate(request({"action": "BUY", "symbol": "INFY", "quantity": 0},
                                               {"action": "SELL", "symbol": "TCS", "quantity": -1}))
     assert len(exc.value.errors) == 2
-
-
-def test_unconfigured_broker_is_rejected():
-    with pytest.raises(UnconfiguredBrokerError):
-        ExecutionValidator().validate(request({"action": "BUY", "symbol": "INFY", "quantity": 1}, broker="zerodha"))
 
 
 def holding(symbol: str, quantity: int) -> Holding:

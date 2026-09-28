@@ -1,4 +1,4 @@
-"""Upstox credentials. Env: UPSTOX_ACCESS_TOKEN."""
+"""Upstox app settings. Upstox needs none beyond the user's access token."""
 from .base import BrokerConfig, env_config
 
 

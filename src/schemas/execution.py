@@ -7,7 +7,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.integrations.brokers.enums import BrokerName, Exchange, Side
-from src.models.enums import Action, ExecutionState, OrderState, Phase
+from src.models.execution.enums import Action, ExecutionState, OrderState, Phase
 
 
 class Instruction(BaseModel):

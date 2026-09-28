@@ -1,4 +1,4 @@
-"""Zerodha credentials. Env: ZERODHA_API_KEY, ZERODHA_ACCESS_TOKEN."""
+"""Zerodha app settings. Env: ZERODHA_API_KEY."""
 from .base import BrokerConfig, env_config
 
 

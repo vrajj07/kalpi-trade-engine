@@ -11,11 +11,11 @@ from src.core.database import Base
 from src.integrations.brokers.base import OrderRequest
 from src.integrations.brokers.enums import Exchange, OrderType, Side
 from src.models.columns import enum_column
-from src.models.enums import Action, OrderState, Phase
+from src.models.execution.enums import Action, OrderState, Phase
 
 if TYPE_CHECKING:
-    from src.models.execution import Execution
-    from src.models.execution_event import ExecutionEvent
+    from src.models.execution.execution import Execution
+    from src.models.execution.event import ExecutionEvent
 
 
 class ExecutionOrder(Base):

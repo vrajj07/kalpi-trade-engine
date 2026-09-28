@@ -5,6 +5,7 @@ import tempfile
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{tempfile.mkdtemp()}/test.db"
 os.environ["ORDER_TIMEOUT_SECONDS"] = "0.2"
 os.environ["ORDER_POLL_INTERVAL_SECONDS"] = "0.01"
+os.environ["TOKEN_ENCRYPTION_KEYS"] = "dGVzdC1vbmx5LWtleS1ub3QtYS1zZWNyZXQtMzJieXQ="  # Fernet key, tests only
 
 import pytest
 from tenacity import wait_none

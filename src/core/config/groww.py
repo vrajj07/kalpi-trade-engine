@@ -1,4 +1,4 @@
-"""Groww credentials. Env: GROWW_ACCESS_TOKEN."""
+"""Groww app settings. Groww needs none beyond the user's access token."""
 from .base import BrokerConfig, env_config
 
 

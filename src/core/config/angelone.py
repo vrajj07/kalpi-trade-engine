@@ -1,4 +1,4 @@
-"""AngelOne credentials. Env: ANGELONE_API_KEY, ANGELONE_ACCESS_TOKEN (jwt), ANGELONE_CLIENT_ID."""
+"""AngelOne app settings. Env: ANGELONE_API_KEY, ANGELONE_CLIENT_* / ANGELONE_MAC_ADDRESS."""
 from .base import BrokerConfig, env_config
 
 

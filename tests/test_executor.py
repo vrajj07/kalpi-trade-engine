@@ -6,7 +6,7 @@ import pytest
 from src.integrations.brokers.base import BrokerCredentials
 from src.integrations.brokers.mock import MockBroker
 from src.models import Execution
-from src.models.enums import ExecutionState, OrderState
+from src.models.execution.enums import ExecutionState, OrderState
 from src.modules.execution.executor import Executor
 from src.modules.execution.helpers.planner import order_tag, plan
 from src.schemas.execution import ExecutionCreate

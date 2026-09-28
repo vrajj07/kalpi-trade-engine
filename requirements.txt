@@ -7,6 +7,7 @@ tenacity>=8.3
 aiolimiter>=1.1
 sqlalchemy[asyncio]>=2.0
 psycopg[binary]>=3.2
+cryptography>=43
 
 # Broker SDKs are intentionally not used: adapters call the REST APIs with httpx
 # (async, one retry/rate-limit/error model across brokers). The SDKs are sync (requests).

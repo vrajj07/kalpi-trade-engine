@@ -1,8 +1,8 @@
 """Semantic validation of an execution request: rules about what the request means.
 
 The schema (src/schemas/execution.py) only checks shape: types, ranges, lengths, and that exactly
-one of `target` / `instructions` is sent. Rules that depend on the action, on other instructions,
-on configuration or on the user's holdings live here.
+one of `target` / `instructions` is sent. Rules that depend on the action, on other instructions
+or on the user's holdings live here.
 
 Holdings checks are a fail-fast guard, not a guarantee: holdings are read at submission and can
 change before the orders are sent (time-of-check to time-of-use), and settled holdings are not
@@ -12,22 +12,20 @@ The broker's rejection stays the source of truth.
 from collections.abc import Sequence
 
 from src.integrations.brokers.base import Holding
-from src.integrations.brokers.enums import BrokerName, Exchange
-from src.integrations.brokers.registry import is_configured
+from src.integrations.brokers.enums import Exchange
 from src.models import Execution
-from src.models.enums import Action
+from src.models.execution.enums import Action
 from src.modules.execution.exceptions import (
     IdempotencyKeyReusedError,
     InvalidInstructionsError,
     PortfolioNotEmptyError,
-    UnconfiguredBrokerError,
 )
 from src.schemas.execution import ExecutionCreate, Instruction, TargetHolding
 
 
 class ExecutionValidator:
     def validate(self, request: ExecutionCreate) -> None:
-        """Checks that need no data: collected and raised together, then the broker."""
+        """Checks that need no data, collected and raised together."""
         if request.target is not None:
             errors = self.validate_one_per_symbol(request.target, field="target")
         else:
@@ -35,7 +33,6 @@ class ExecutionValidator:
                       *self.validate_one_per_symbol(request.instructions, field="instructions")]
         if errors:
             raise InvalidInstructionsError(errors)
-        self.validate_broker_configured(request.broker)
 
     def validate_against_holdings(self, request: ExecutionCreate, holdings: list[Holding]) -> None:
         held = {(h.exchange, h.symbol): h.quantity for h in holdings if h.quantity > 0}
@@ -63,11 +60,6 @@ class ExecutionValidator:
                 errors.append(f"{field}[{position}]: more than one entry for {i.exchange}:{i.symbol}")
             seen.add((i.exchange, i.symbol))
         return errors
-
-    def validate_broker_configured(self, broker: BrokerName) -> None:
-        """Fail at submission, not later in the background run."""
-        if not is_configured(broker):
-            raise UnconfiguredBrokerError(broker)
 
     def validate_first_time(self, held: dict[tuple[Exchange, str], int]) -> None:
         """A target portfolio is all BUYs, which is only right when nothing is held yet."""
